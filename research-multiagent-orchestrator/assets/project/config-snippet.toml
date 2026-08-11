@@ -1,0 +1,11 @@
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 2
+
+[model_providers.deepseek]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com/"
+wire_api = "responses"
+env_key = "DEEPSEEK_API_KEY"
+env_key_instructions = "Set DEEPSEEK_API_KEY as a user environment variable, then fully restart Codex Desktop."
+supports_websockets = false

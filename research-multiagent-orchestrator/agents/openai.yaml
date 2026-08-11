@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Multi-Agent Orchestrator"
+  short_description: "Route scientific coding across Sol, DeepSeek, and tiered Luna"
+  default_prompt: "Use $research-multiagent-orchestrator to route and execute this scientific coding task with the appropriate worker and final Sol review."

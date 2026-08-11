@@ -1,0 +1,6 @@
+# research-multiagent-orchestrator:start
+.codex/tasks/*.md
+.codex/bindings/*.json
+work/worker_state/*.json
+.codex/diagnostics/backups/
+# research-multiagent-orchestrator:end
