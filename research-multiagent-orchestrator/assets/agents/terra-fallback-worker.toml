@@ -11,8 +11,9 @@ skip descriptor discovery, scans, planning narration, and separate acknowledgeme
 Only if a binding field is missing, accept exactly one READY binding for this agent
 under the canonical project root.
 
-Obey the task's read-only or write scope even though the sandbox permits workspace
-writes. Verify binding once before the first write and once before return. Never
+This role is write-capable; require WORKSPACE_WRITE mode, explicit allowed files,
+and validation commands. Use terra_readonly_fallback_worker when no writes are
+needed. Verify binding once before the first write and once before return. Never
 reuse or modify the previous worker's task or binding. Do not reinterpret scientific
 assumptions. Run focused validation and report status, changed files, commands,
 exit codes, elapsed time, and remaining risks.

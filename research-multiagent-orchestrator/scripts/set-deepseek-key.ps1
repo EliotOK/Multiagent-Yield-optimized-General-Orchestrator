@@ -3,9 +3,12 @@ param([switch]$Check)
 
 $ErrorActionPreference = 'Stop'
 
-$existing = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
+$environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+$existing = $null -ne $environmentKey -and
+    'DEEPSEEK_API_KEY' -in $environmentKey.GetValueNames()
+if ($null -ne $environmentKey) { $environmentKey.Dispose() }
 if ($Check) {
-    Write-Output $(if ([string]::IsNullOrWhiteSpace($existing)) {
+    Write-Output $(if (-not $existing) {
         'DEEPSEEK_API_KEY_USER_SCOPE=MISSING'
     } else {
         'DEEPSEEK_API_KEY_USER_SCOPE=PRESENT'
@@ -13,10 +16,18 @@ if ($Check) {
     $existing = $null
     exit 0
 }
+$existingKeyPresent = $existing
 $existing = $null
 
 if (-not [Environment]::UserInteractive) {
     throw 'Run this script in an interactive PowerShell terminal.'
+}
+
+if ($existingKeyPresent) {
+    $confirmation = Read-Host 'A user-level DEEPSEEK_API_KEY already exists. Type REPLACE to overwrite it'
+    if ($confirmation -cne 'REPLACE') {
+        throw 'Existing key was preserved; nothing was changed.'
+    }
 }
 
 Write-Host 'Enter the DeepSeek API key. Input is hidden and is not written to command history.'

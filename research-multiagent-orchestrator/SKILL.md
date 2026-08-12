@@ -31,8 +31,17 @@ Use these defaults:
   integrations, algorithms, or difficult test failures.
 - Use `luna_max_worker` only for the hardest quality-first tasks after high effort
   is insufficient or the acceptance risk explicitly justifies maximum reasoning.
+- Use `terra_readonly_fallback_worker` to reconstruct evidence after a diagnosed
+  failure without workspace writes. Use `terra_fallback_worker` only when a new
+  bounded recovery task genuinely requires writes.
 - Keep scientific decisions and final review with the primary agent.
 - Do not delegate a trivial edit when coordination costs more than the work.
+
+Treat DeepSeek as an external data recipient. Default every task to `LOCAL_ONLY`.
+Create a DeepSeek task only after the user or applicable data policy permits the
+selected context to leave the Codex/OpenAI environment; set `DataSensitivity` to
+`APPROVED_EXTERNAL` or `PUBLIC` explicitly. Never send credentials, participant
+data, unpublished restricted data, or contractual/confidential material by default.
 
 ## Check installation
 
@@ -62,9 +71,10 @@ If the key is unavailable or existing instructions suspend DeepSeek, pass
 and workers, install Luna/Terra routing, and record `deepseek_enabled = false` in
 the project descriptor. If user-level Codex changes are not authorized, also pass
 `-ProjectOnly`; modify only the project and do not touch `config.toml`, the global
-agents directory, or global `AGENTS.md`. Project-only mode requires suitable Luna
-agents to be configured independently at user level. Never ask the user to relax a
-DeepSeek suspension merely to run MYGO.
+agents directory, or global `AGENTS.md`. Project-only changes scope, not routing:
+it requires every selected user-level worker and provider to be present already and
+validates them read-only. Never ask the user to relax a DeepSeek suspension merely
+to run MYGO.
 
 ## Delegate safely
 
@@ -83,8 +93,8 @@ fast DeepSeek context worker only when the context volume can amortize agent sta
 Keep a clear coding task with the primary agent when it can likely be completed in
 about one minute and isolation, parallelism, or specialist reasoning adds no value.
 
-Allow at most one write-capable worker at a time. A read-only context worker may
-run alongside it only when their responsibilities do not overlap semantically.
+Run at most one delegated worker at a time. The immutable binding protocol is
+strictly serial and does not claim semantic isolation for concurrent workers.
 Never let DeepSeek and Luna modify the same task concurrently.
 
 Use dynamic observation windows. Treat the first observation point as a status
@@ -103,9 +113,9 @@ validation. Apply [scientific-invariants.md](references/scientific-invariants.md
 for R, GIS, ecological data, Bash, and Python tasks.
 
 Do not delete task or binding files while an agent remains running or while an
-external process may still write. After the result is collected, the agent is
-completed, and validation finishes, mark the state `REVIEWED` and remove or archive
-temporary coordination files according to project policy.
+external process may still write. After the result is collected and the agent is
+completed, transition state with `scripts/update-task-state.ps1`. After independent
+validation finishes, archive as `REVIEWED`; never edit state JSON manually.
 
 Prefer recoverable archival with `scripts/close-task.ps1`. Preview first, confirm
 the worker and child processes are stopped, then rerun with `-ConfirmWorkerStopped

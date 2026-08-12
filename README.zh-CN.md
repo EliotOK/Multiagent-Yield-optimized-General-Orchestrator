@@ -11,7 +11,7 @@ MYGO 是一个面向科研编程项目、优先支持 Windows 的 Codex skill。
 发布用 skill 保留内部名称 `research-multiagent-orchestrator`，以便 Codex 能够
 明确识别它的用途和触发条件。
 
-> 当前状态：`v0.1.0-beta.3`。这是非官方社区项目，与 OpenAI 或 DeepSeek
+> 当前状态：`v0.1.0-beta.4`。这是非官方社区项目，与 OpenAI 或 DeepSeek
 > 不存在隶属或背书关系。
 
 ## 工作方式
@@ -28,6 +28,8 @@ Codex 主 Agent 始终负责任务理解、科研判断、架构、验收标准�
 | 边界清楚的普通实现 | Luna medium |
 | 困难的局部 debug 或重构 | Luna high |
 | 明确以最高质量为先的升级任务 | Luna max |
+| 失败任务的只读证据重建 | `terra_readonly_fallback_worker` |
+| 失败任务的已批准有限写入恢复 | `terra_fallback_worker` |
 
 MYGO 还会安装不可变 task/binding/state 协议、回退规则、等待策略以及 Windows
 PowerShell 辅助脚本。
@@ -36,7 +38,8 @@ PowerShell 辅助脚本。
 
 - 支持自定义 subagent 的 Codex Desktop 或 Codex CLI；
 - Windows PowerShell 5.1+ 或 PowerShell 7+；
-- 示例冒烟测试需要 Node.js；科研项目建议另外安装 R 和 Python；
+- 安装本身不需要 Node.js 或 Python；只有发布验证需要 Python 3.11+。R、Python、
+  Node.js、GIS 工具和 Git 仅在具体委派任务需要时安装；
 - 只有使用 DeepSeek worker 时才需要环境变量 `DEEPSEEK_API_KEY`；
 - Luna worker 需要当前 Codex 账户能够使用相应模型。
 
@@ -50,7 +53,7 @@ API key 不应写入项目文件、prompt、task 文件或 GitHub 仓库。
 
 ```text
 请使用 $skill-installer 从下面的 GitHub 仓库安装 skill：
-https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator
+https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/tree/v0.1.0-beta.4
 
 安装其中的 research-multiagent-orchestrator skill。安装后阅读它的 SKILL.md，
 并为当前项目配置 MYGO 工作流。先以 preview 模式运行 install-workflow.ps1，
@@ -62,10 +65,12 @@ https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator
 随后彻底重启 Codex。不要要求我把 key 粘贴进聊天。如果我明确拒绝 DeepSeek，
 或者现有规则明确暂停 DeepSeek，请在 install-workflow.ps1 和
 verify-workflow.ps1 中都使用 -LunaOnly，不要要求我重新启用 DeepSeek。
-如果没有修改全局 Codex 配置的授权，再同时使用 -ProjectOnly；
-不得修改 ~/.codex/config.toml、~/.codex/agents 或全局 AGENTS.md。在受限模式中，
-长上下文任务由主 Agent处理；编码任务按难度交给 Luna medium/high/max；Terra
-仅在 Luna 已确认失败后顺序接替。最后告诉我是否需要彻底重启 Codex Desktop。
+如果没有修改全局 Codex 配置的授权，再同时使用 -ProjectOnly；不得修改
+~/.codex/config.toml、~/.codex/agents 或全局 AGENTS.md。ProjectOnly 只改变安装
+范围：若用户级 DeepSeek provider、全部兼容 agents 和 key 已存在，保留完整
+DeepSeek 路由；否则写入前停止。LunaOnly 才会禁用 DeepSeek，并由主 Agent承担
+长上下文任务。Terra 仅在失败已确认后顺序接替。最后告诉我是否需要彻底重启
+Codex Desktop。
 ```
 
 ### 没有 DeepSeek API key 时
@@ -97,8 +102,9 @@ Desktop，才能启用 DeepSeek 路由；无需重新下载 skill。
 使用 `-LunaOnly` 时，安装器不会写入 DeepSeek provider，也不会安装或启用任何
 DeepSeek worker。若再加 `-ProjectOnly`，安装器只修改当前项目，完全不触碰用户级
 Codex 配置。项目描述符会记录 `deepseek_enabled = false`，任务创建脚本也会拒绝
-误派发 DeepSeek 任务。`ProjectOnly` 只安装项目协议和路由说明；设备必须已经通过
-其他方式配置好兼容的 Luna agents，否则它不会自行提供可调用的 Luna worker。
+误派发 DeepSeek 任务。`ProjectOnly` 只安装项目协议和路由说明；设备必须已经配置
+好本次选择的 Luna/Terra agents；完整模式还要求 DeepSeek agents 和 provider 已
+存在。安装器只读验证这些前置条件，不会修改用户级文件。
 
 ### 手动安装到项目
 
@@ -137,9 +143,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 ## 科研安全原则
 
+- DeepSeek worker 会把选中的 prompt 和文件上下文发送给第三方 provider。只读
+  sandbox 只能阻止本地写入，不能阻止数据传输。参与者级数据、未公开受限数据、
+  合同或保密材料、凭据默认必须留在主 Agent/Luna 路由；只有数据政策明确允许时
+  才可交给 DeepSeek。创建任务默认 `LOCAL_ONLY`，DeepSeek 路由必须显式标记为
+  `APPROVED_EXTERNAL` 或 `PUBLIC`；
 - 原始数据视为不可变；
 - 不得静默改变行数、单位、CRS、缺失值、分类学映射或分析假设；
-- 同时最多允许一个可写 worker；
+- 同时只运行一个 delegated worker；该协议有意采用严格串行；
 - 每次委派使用不可变 task 和 binding；
 - worker 可能仍在写入时不得删除协调证据。
 
@@ -158,11 +169,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 在 Windows 上运行离线测试：
 
 ```powershell
-pwsh -NoProfile -File .\tests\validate-package.ps1
-pwsh -NoProfile -File .\tests\install-smoke.ps1
+powershell -NoProfile -File .\tests\validate-package.ps1
+powershell -NoProfile -File .\tests\install-smoke.ps1
+powershell -NoProfile -File .\tests\security-regression.ps1
 ```
 
-GitHub Actions 会运行相同测试，不需要 API key，也不会调用模型。
+PowerShell 7 用户可将 `powershell` 替换为 `pwsh`。GitHub Actions 会在 Windows
+PowerShell 5.1 和 PowerShell 7 上运行全部三项测试，不需要 API key，也不会调用模型。
 
 ## 安全与许可证
 

@@ -10,13 +10,15 @@ Use `deepseek_context_worker` for low-reasoning long-context inventory and log
 reduction, `deepseek_context_reasoning_worker` for complex lineage and schema audits,
 `deepseek_batch_worker` for approved repetitive edits, `luna_medium_worker` for
 ordinary bounded coding, `luna_high_worker` for complex localized work,
-`luna_max_worker` only for explicit quality-first escalation, and
-`terra_fallback_worker` only after diagnosed failure. Keep trivial work with the
+`luna_max_worker` only for explicit quality-first escalation,
+`terra_readonly_fallback_worker` for read-only failure reconstruction, and
+`terra_fallback_worker` for bounded write recovery only after diagnosed failure.
+Keep trivial work with the
 primary agent when worker startup is likely to cost more than the task.
 
 Use unique immutable `.codex/tasks/<task-id>.md` and
 `.codex/bindings/<task-id>.json` artifacts. Never use the legacy singleton
-`.codex/deepseek-worker-task.md`. Allow only one write-capable worker at a time.
+`.codex/deepseek-worker-task.md`. Run only one delegated worker at a time.
 Never switch workers because of elapsed time alone, and never remove a binding until
 the worker and child processes are confirmed stopped.
 

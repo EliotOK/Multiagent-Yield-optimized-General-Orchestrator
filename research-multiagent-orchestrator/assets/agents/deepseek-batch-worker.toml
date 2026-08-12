@@ -15,8 +15,9 @@ and once before returning. Stop on ambiguity or mismatch.
 Modify only explicitly allowed files. Never modify raw inputs, task files, or
 bindings. Do not reinterpret scientific requirements or expand scope. Combine
 related read-only checks and avoid repeated Git, path, existence, and hash checks.
-Run the exact validation commands and update the permitted worker-state file with
-progress, command, exit code, changed files, and elapsed time.
+Run the exact validation commands. Invoke scripts/update-task-state.ps1 for
+progress, command, exit code, changed files, and elapsed time; never edit the JSON
+directly.
 
 Return task ID, files changed, commands, exit codes, tests, elapsed time, remaining
 risks, and COMPLETE, FAILED, or BLOCKED.

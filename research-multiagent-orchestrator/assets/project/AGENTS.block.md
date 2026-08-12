@@ -11,13 +11,14 @@ Route approved repetitive multi-file edits to
 `deepseek_batch_worker`. Route ordinary bounded coding to `luna_medium_worker`,
 complex localized debugging and implementation to `luna_high_worker`, and only
 explicit quality-first escalations to `luna_max_worker`. Use
-`terra_fallback_worker` only after a failure is diagnosed,
+`terra_readonly_fallback_worker` for read-only reconstruction and
+`terra_fallback_worker` only for bounded write recovery after a failure is diagnosed,
 the previous writer is stopped, and a new immutable task describes partial state.
 Keep trivial work with the primary agent.
 
 Before delegation, create one unique immutable task and binding under `.codex/`.
-Use a no-history fork for custom agents. Allow at most one write-capable worker at
-a time, and never let DeepSeek and Luna write the same task concurrently. Do not
+Use a no-history fork for custom agents. Run at most one delegated worker at a time,
+and never let DeepSeek and Luna write the same task concurrently. Do not
 delete bindings until the worker is completed and no process may still write.
 
 When the spawn message supplies every binding field, the worker must read task and

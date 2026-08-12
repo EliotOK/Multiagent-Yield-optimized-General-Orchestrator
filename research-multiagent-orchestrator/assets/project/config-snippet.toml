@@ -1,6 +1,6 @@
 [agents]
 enabled = true
-max_concurrent_threads_per_session = 2
+max_concurrent_threads_per_session = 1
 
 [model_providers.deepseek]
 name = "DeepSeek"

@@ -62,7 +62,7 @@ Use a new task ID and binding for every fallback.
 ```text
 DeepSeek context failure
   -> retry once with smaller coherent batches when the provider is healthy
-  -> terra_fallback_worker for a bounded read-only reconstruction
+  -> terra_readonly_fallback_worker for a bounded read-only reconstruction
   -> primary agent
 
 DeepSeek batch failure
@@ -88,5 +88,8 @@ Luna max failure
   -> primary agent
 ```
 
-Never run fallback workers concurrently on the same files. Never interpret slowness
-alone as a provider failure.
+Choose `terra_readonly_fallback_worker` whenever reconstruction needs no writes;
+its sandbox is actually read-only. Use write-capable `terra_fallback_worker` only
+after the primary agent approves explicit files and validation commands. Never run
+fallback workers concurrently on the same files. Never interpret slowness alone as
+a provider failure.

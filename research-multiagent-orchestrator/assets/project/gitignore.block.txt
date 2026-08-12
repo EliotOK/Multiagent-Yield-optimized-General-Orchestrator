@@ -1,6 +1,14 @@
 # research-multiagent-orchestrator:start
 .codex/tasks/*.md
+.codex/tasks/*.rmo-tmp
 .codex/bindings/*.json
+.codex/bindings/*.rmo-tmp
+.codex/bindings/.create.lock
+.codex/bindings/.create-transaction.json
 work/worker_state/*.json
+work/worker_state/*.rmo-tmp
+work/worker_state/*.lock
+.codex/research-multiagent.toml
+.codex/diagnostics/task-history/
 .codex/diagnostics/backups/
 # research-multiagent-orchestrator:end

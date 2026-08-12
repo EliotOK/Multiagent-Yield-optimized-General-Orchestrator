@@ -46,9 +46,22 @@ try {
         -ProjectRoot $testProject -CodexHome $testCodex -ForceAgentUpdate -Apply
     if (-not $?) { throw 'Installer smoke test failed.' }
 
+    $initialSnapshot = @(Get-ChildItem -LiteralPath $testProject, $testCodex -Recurse -File | ForEach-Object {
+        "$($_.FullName)=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+    } | Sort-Object)
+    & (Join-Path $SkillRoot 'scripts\install-workflow.ps1') `
+        -ProjectRoot $testProject -CodexHome $testCodex -ForceAgentUpdate -Apply | Out-Null
+    $idempotentSnapshot = @(Get-ChildItem -LiteralPath $testProject, $testCodex -Recurse -File | ForEach-Object {
+        "$($_.FullName)=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+    } | Sort-Object)
+    if (($initialSnapshot -join "`n") -cne ($idempotentSnapshot -join "`n")) {
+        throw 'Idempotent reinstall changed installed files.'
+    }
+
     $taskOutput = & (Join-Path $SkillRoot 'scripts\create-task.ps1') `
         -ProjectRoot $testProject -Worker luna_medium_worker `
-        -Objective 'Release smoke test. No worker is spawned.'
+        -Objective 'Release smoke test. No worker is spawned.' `
+        -AllowedFiles 'outputs/smoke.txt' -ValidationCommands 'node --version'
     $taskId = ($taskOutput | Where-Object { $_ -like 'TASK_ID=*' } | Select-Object -First 1) -replace '^TASK_ID=', ''
     if ([string]::IsNullOrWhiteSpace($taskId)) { throw 'create-task did not return TASK_ID.' }
 
@@ -58,10 +71,18 @@ try {
         throw 'create-task binding did not preserve the expected worker and protocol version.'
     }
 
+    & (Join-Path $SkillRoot 'scripts\update-task-state.ps1') `
+        -ProjectRoot $testProject -TaskId $taskId -NewState INTERRUPTED | Out-Null
     & (Join-Path $SkillRoot 'scripts\close-task.ps1') `
         -ProjectRoot $testProject -TaskId $taskId -Outcome INTERRUPTED `
         -ConfirmWorkerStopped -Apply
     if (-not $?) { throw 'close-task smoke test failed.' }
+    & git -C $testProject init --quiet
+    foreach ($ignoredPath in @('.codex/research-multiagent.toml',
+            ".codex/diagnostics/task-history/$taskId/task.md")) {
+        & git -C $testProject check-ignore --quiet -- $ignoredPath
+        if ($LASTEXITCODE -ne 0) { throw "Generated private artifact is not gitignored: $ignoredPath" }
+    }
 
     $legacyCodex = Join-Path $testRoot 'legacy-codex-home'
     New-Item -ItemType Directory -Path $legacyCodex -Force | Out-Null
@@ -106,19 +127,42 @@ try {
     if (-not $deepSeekRejected) { throw 'Luna-only mode did not block DeepSeek task creation.' }
 
     $projectOnlyRoot = Join-Path $testRoot 'project-only'
-    $untouchedCodex = Join-Path $testRoot 'untouched-codex-home'
     New-Item -ItemType Directory -Path $projectOnlyRoot -Force | Out-Null
+    $codexSnapshotBefore = @(Get-ChildItem -LiteralPath $lunaCodex -Recurse -File | ForEach-Object {
+        "$($_.FullName.Substring($lunaCodex.Length))=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+    } | Sort-Object)
     & (Join-Path $SkillRoot 'scripts\install-workflow.ps1') `
-        -ProjectRoot $projectOnlyRoot -CodexHome $untouchedCodex `
+        -ProjectRoot $projectOnlyRoot -CodexHome $lunaCodex `
         -LunaOnly -ProjectOnly -Apply
     if (-not $?) { throw 'Project-only installer smoke test failed.' }
-    if (Test-Path -LiteralPath $untouchedCodex) {
-        throw 'Project-only mode created or modified the supplied Codex home.'
+    $codexSnapshotAfter = @(Get-ChildItem -LiteralPath $lunaCodex -Recurse -File | ForEach-Object {
+        "$($_.FullName.Substring($lunaCodex.Length))=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+    } | Sort-Object)
+    if (($codexSnapshotBefore -join "`n") -cne ($codexSnapshotAfter -join "`n")) {
+        throw 'Project-only mode modified the supplied Codex home.'
     }
     & (Join-Path $SkillRoot 'scripts\verify-workflow.ps1') `
-        -ProjectRoot $projectOnlyRoot -CodexHome $untouchedCodex `
+        -ProjectRoot $projectOnlyRoot -CodexHome $lunaCodex `
         -LunaOnly -ProjectOnly
     if (-not $?) { throw 'Project-only verification failed.' }
+
+    $fullProjectOnlyRoot = Join-Path $testRoot 'full-project-only'
+    New-Item -ItemType Directory -Path $fullProjectOnlyRoot -Force | Out-Null
+    $fullCodexBefore = @(Get-ChildItem -LiteralPath $testCodex -Recurse -File | ForEach-Object {
+        "$($_.FullName.Substring($testCodex.Length))=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+    } | Sort-Object)
+    & (Join-Path $SkillRoot 'scripts\install-workflow.ps1') `
+        -ProjectRoot $fullProjectOnlyRoot -CodexHome $testCodex -ProjectOnly -Apply
+    if (-not $?) { throw 'Full project-only installer smoke test failed.' }
+    & (Join-Path $SkillRoot 'scripts\verify-workflow.ps1') `
+        -ProjectRoot $fullProjectOnlyRoot -CodexHome $testCodex -ProjectOnly
+    if (-not $?) { throw 'Full project-only verification failed.' }
+    $fullCodexAfter = @(Get-ChildItem -LiteralPath $testCodex -Recurse -File | ForEach-Object {
+        "$($_.FullName.Substring($testCodex.Length))=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+    } | Sort-Object)
+    if (($fullCodexBefore -join "`n") -cne ($fullCodexAfter -join "`n")) {
+        throw 'Full project-only mode modified user-level Codex files.'
+    }
 
     Write-Output 'INSTALL_SMOKE=PASS'
 }

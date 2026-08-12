@@ -11,7 +11,7 @@ workers.
 The distributable Codex skill keeps the descriptive internal name
 `research-multiagent-orchestrator` so its purpose and trigger remain explicit.
 
-> Status: `v0.1.0-beta.3` release candidate. This is an unofficial community
+> Status: `v0.1.0-beta.4` release candidate. This is an unofficial community
 > project and is not affiliated with or endorsed by OpenAI or DeepSeek.
 
 ## What it does
@@ -29,6 +29,8 @@ work as follows:
 | Clear bounded implementation | Luna medium |
 | Difficult local debugging or refactor | Luna high |
 | Exceptional quality-first escalation | Luna max |
+| Failed task, read-only evidence reconstruction | `terra_readonly_fallback_worker` |
+| Failed task, approved bounded write recovery | `terra_fallback_worker` |
 
 The skill installs task/binding/state protocols, worker definitions, routing rules,
 fallback rules, and PowerShell utilities for Windows.
@@ -37,8 +39,9 @@ fallback rules, and PowerShell utilities for Windows.
 
 - Codex Desktop or Codex CLI with custom subagents enabled.
 - Windows PowerShell 5.1+ or PowerShell 7+.
-- Node.js for the included smoke examples; R and Python are optional but recommended
-  for scientific projects.
+- No Node.js or Python runtime is required for installation. Python 3.11+ is used
+  only by the release validation suite; install R, Python, Node.js, GIS tools, or
+  Git only when the delegated project tasks need them.
 - A DeepSeek API key in `DEEPSEEK_API_KEY` only when using DeepSeek workers. Never
   put the key in project files, prompts, task files, or this repository.
 - Access to the selected Luna models for Luna workers; model availability depends on
@@ -52,7 +55,7 @@ Paste this into a new Codex task on the target device:
 
 ```text
 Use $skill-installer to install the skill from:
-https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator
+https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/tree/v0.1.0-beta.4
 
 Install the research-multiagent-orchestrator skill. After installation, read its
 SKILL.md and configure MYGO for the current project. Run install-workflow.ps1 in
@@ -64,11 +67,12 @@ myself in an interactive PowerShell terminal, then fully restart Codex. Do not a
 me to paste the key into chat. If I explicitly decline DeepSeek or existing
 instructions suspend it, pass -LunaOnly to both scripts and do not ask me to
 re-enable DeepSeek. If global Codex changes are not authorized, also pass
--ProjectOnly; do not modify
-~/.codex/config.toml, ~/.codex/agents, or the global AGENTS.md. In either restricted
-mode, keep long-context work with the primary agent, use Luna by task difficulty,
-and reserve Terra for diagnosed sequential fallback. Tell me when a full Codex
-Desktop restart is required.
+-ProjectOnly; do not modify ~/.codex/config.toml, ~/.codex/agents, or the global
+AGENTS.md. ProjectOnly changes installation scope only: preserve full DeepSeek
+routing when all compatible user-level agents, provider configuration, and the key
+already exist; otherwise stop before writing. LunaOnly disables DeepSeek and keeps
+long-context work with the primary agent. Reserve Terra for diagnosed sequential
+fallback. Tell me when a full Codex Desktop restart is required.
 ```
 
 Full-mode preview is safe without `DEEPSEEK_API_KEY`, but apply stops before writing
@@ -94,7 +98,8 @@ Use `-LunaOnly` to install and verify Luna/Terra without installing or enabling 
 DeepSeek provider or worker. Add `-ProjectOnly` when MYGO may update only the current
 project; this intentionally leaves all user-level Codex configuration untouched.
 Project-only mode installs project protocols and routing instructions, but requires
-compatible Luna agents to have already been configured independently at user level.
+all selected Luna/Terra and, in full mode, DeepSeek agents and provider configuration
+to exist at user level. It validates those prerequisites without modifying them.
 
 ### Manual project installation
 
@@ -134,9 +139,15 @@ See [examples](examples) for scientific-task prompts and expected routing.
 
 ## Safety model
 
+- A DeepSeek worker sends selected prompt and file context to a third-party provider.
+  Read-only sandboxing prevents local writes; it does not prevent data transmission.
+  Keep participant-level, unpublished restricted, contractual, confidential, and
+  credential-bearing content on the primary/Luna route unless its release policy
+  explicitly permits DeepSeek. Task creation defaults to `LOCAL_ONLY` and requires
+  an explicit `APPROVED_EXTERNAL` or `PUBLIC` classification for DeepSeek.
 - Treat raw data as immutable.
 - Do not silently alter rows, units, CRS, missingness, taxonomy, or assumptions.
-- Allow one write-capable worker at a time.
+- Run only one delegated worker at a time. The task protocol is deliberately serial.
 - Use immutable task and binding records for every delegation.
 - Archive coordination evidence after review; do not delete it while a worker might
   still write.
@@ -157,11 +168,13 @@ See [examples](examples) for scientific-task prompts and expected routing.
 Run the offline checks on Windows:
 
 ```powershell
-pwsh -NoProfile -File .\tests\validate-package.ps1
-pwsh -NoProfile -File .\tests\install-smoke.ps1
+powershell -NoProfile -File .\tests\validate-package.ps1
+powershell -NoProfile -File .\tests\install-smoke.ps1
+powershell -NoProfile -File .\tests\security-regression.ps1
 ```
 
-The CI workflow runs the same checks without API keys or model calls.
+PowerShell 7 users may substitute `pwsh`. CI runs all three checks on Windows
+PowerShell 5.1 and PowerShell 7 without API keys or model calls.
 
 ## Security
 

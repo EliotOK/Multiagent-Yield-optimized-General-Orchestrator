@@ -20,9 +20,11 @@ DISPATCHED -> AGENT_CREATED -> TASK_ACKNOWLEDGED -> TOOL_STARTED
 -> RUNNING -> OUTPUT_READY -> AGENT_COMPLETED -> REVIEWED
 ```
 
-The parent owns `DISPATCHED`, `AGENT_CREATED`, and final `REVIEWED`. A read-only
-worker cannot write heartbeats, so the parent records observations for that route.
-A write-capable worker may update `TASK_ACKNOWLEDGED` through `OUTPUT_READY`.
+The parent creates `DISPATCHED` and records parent-observed transitions for a
+read-only worker, which cannot write heartbeats. A write-capable worker may update
+`TASK_ACKNOWLEDGED` through `OUTPUT_READY`. All actors must use
+`scripts/update-task-state.ps1`; direct JSON editing is invalid. `REVIEWED` is an
+archive outcome written by `close-task.ps1`, not an active state transition.
 For latency diagnosis, record dispatch, agent-created, first-tool, last-tool,
 output-received, and agent-completed times without adding acknowledgement turns.
 
@@ -59,7 +61,9 @@ Require:
 - unresolved risks and primary-agent decisions;
 - explicit `COMPLETE`, `FAILED`, or `BLOCKED` status.
 
-After the primary agent collects and reviews the result, use `scripts/close-task.ps1`
-to archive the task, binding, and state together. Require explicit confirmation that
-the worker and child processes are stopped. Archival clears the active binding while
-preserving evidence for fallback diagnosis.
+After the primary agent collects and reviews the result, transition through
+`OUTPUT_READY` to `AGENT_COMPLETED`, then use `scripts/close-task.ps1 -Outcome
+REVIEWED` to archive the task, binding, and state together. Failed outcomes require
+the matching terminal active state. Require explicit confirmation that the worker
+and child processes are stopped. Archival clears the active binding while preserving
+evidence for fallback diagnosis.

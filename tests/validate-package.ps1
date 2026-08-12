@@ -18,10 +18,13 @@ foreach ($relative in @('README.md', 'README.zh-CN.md')) {
 foreach ($relative in @(
     'SKILL.md', 'agents\openai.yaml', 'scripts\install-workflow.ps1',
     'scripts\set-deepseek-key.ps1',
+    'scripts\update-task-state.ps1',
     'scripts\create-task.ps1', 'scripts\close-task.ps1',
     'assets\agents\luna-medium-worker.toml',
     'assets\agents\luna-high-worker.toml',
-    'assets\agents\luna-max-worker.toml'
+    'assets\agents\luna-max-worker.toml',
+    'assets\agents\terra-readonly-fallback-worker.toml',
+    'assets\agents\terra-fallback-worker.toml'
 )) {
     $path = Join-Path $SkillRoot $relative
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -32,6 +35,15 @@ foreach ($relative in @(
 $skillText = Get-Content -LiteralPath (Join-Path $SkillRoot 'SKILL.md') -Raw -Encoding UTF8
 if ($skillText -notmatch '(?s)^---\s*\r?\nname:\s*research-multiagent-orchestrator\s*\r?\ndescription:\s*.+?\r?\n---') {
     throw 'SKILL.md frontmatter is missing the expected name and description.'
+}
+
+foreach ($workerFile in @('deepseek-batch-worker.toml', 'luna-medium-worker.toml',
+        'luna-high-worker.toml', 'luna-max-worker.toml')) {
+    $workerText = Get-Content -LiteralPath (Join-Path $SkillRoot "assets\agents\$workerFile") -Raw -Encoding UTF8
+    if ($workerText -notmatch 'update-task-state\.ps1' -or
+        $workerText -notmatch 'never\s+edit\s+the\s+(worker-state\s+)?JSON\s+directly') {
+        throw "Write worker does not enforce the state transition helper: $workerFile"
+    }
 }
 
 $parseErrors = @()
@@ -50,12 +62,25 @@ python -c "import pathlib,tomllib; root=pathlib.Path(r'$SkillRoot'); [tomllib.lo
 if ($LASTEXITCODE -ne 0) { throw 'TOML parser validation failed.' }
 
 $textFiles = Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -File | Where-Object {
-    $_.Extension -in '.md', '.ps1', '.toml', '.yaml', '.yml', '.txt'
+    $_.FullName -notmatch '[\\/]\.git[\\/]' -and
+    $_.FullName -ne $PSCommandPath -and
+    $_.Extension -in '.md', '.ps1', '.toml', '.yaml', '.yml', '.txt', '.json',
+        '.py', '.sh', '.cfg', '.ini', '.csv', '.tsv'
 }
-$forbidden = $textFiles | Select-String -Pattern '(?i)[a-z]:\\users\\|\bsk-[A-Za-z0-9_-]{16,}\b|BEGIN (RSA |OPENSSH )?PRIVATE KEY' -List
+$forbidden = $textFiles | Select-String -Pattern '(?i)[a-z]:\\users\\|/users/[^/]+/|\\\\[^\\]+\\users\\|\bsk-[A-Za-z0-9_-]{16,}\b|BEGIN (RSA |OPENSSH )?PRIVATE KEY|DEEPSEEK_API_KEY\s*=\s*["''][^<\s][^"'']+["'']' -List
 if ($forbidden) {
     $forbidden | ForEach-Object { Write-Error "Release privacy scan match: $($_.Path):$($_.LineNumber)" }
     throw 'Release privacy scan failed.'
+}
+
+$englishReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.md') -Raw -Encoding UTF8
+$chineseReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.zh-CN.md') -Raw -Encoding UTF8
+foreach ($requiredText in @('v0.1.0-beta.4', 'ProjectOnly', 'LunaOnly',
+        'security-regression.ps1', 'APPROVED_EXTERNAL', 'terra_readonly_fallback_worker')) {
+    if ($englishReadme -notmatch [regex]::Escape($requiredText) -or
+        $chineseReadme -notmatch [regex]::Escape($requiredText)) {
+        throw "Bilingual documentation parity check failed for: $requiredText"
+    }
 }
 
 Write-Output 'PACKAGE_VALIDATE=PASS'
