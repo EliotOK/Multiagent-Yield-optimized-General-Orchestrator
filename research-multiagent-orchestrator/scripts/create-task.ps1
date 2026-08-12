@@ -30,6 +30,11 @@ $descriptor = Join-Path $ProjectRoot '.codex\research-multiagent.toml'
 if (-not (Test-Path -LiteralPath $descriptor)) {
     throw "Workflow is not installed in this project: $descriptor"
 }
+$descriptorText = Get-Content -LiteralPath $descriptor -Raw -Encoding UTF8
+if ($Worker -like 'deepseek_*' -and
+    $descriptorText -match '(?m)^deepseek_enabled\s*=\s*false\s*$') {
+    throw "DeepSeek routing is disabled for this project. Reinstall explicitly without -LunaOnly or -ProjectOnly before creating $Worker tasks."
+}
 
 $taskDir = Join-Path $ProjectRoot '.codex\tasks'
 $bindingDir = Join-Path $ProjectRoot '.codex\bindings'

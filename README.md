@@ -2,6 +2,8 @@
 
 **Multi-agent Yield-optimized General Orchestrator**
 
+[简体中文](README.zh-CN.md) | English
+
 Windows-first Codex skill for scientific coding projects that routes work across a
 primary reviewer, DeepSeek V4 Flash long-context workers, and tiered Luna coding
 workers.
@@ -9,7 +11,7 @@ workers.
 The distributable Codex skill keeps the descriptive internal name
 `research-multiagent-orchestrator` so its purpose and trigger remain explicit.
 
-> Status: `v0.1.0-beta.1` release candidate. This is an unofficial community
+> Status: `v0.1.0-beta.2` release candidate. This is an unofficial community
 > project and is not affiliated with or endorsed by OpenAI or DeepSeek.
 
 ## What it does
@@ -44,9 +46,41 @@ fallback rules, and PowerShell utilities for Windows.
 
 ## Install
 
-Ask Codex to install the skill from this repository with `$skill-installer`, then
-restart Codex if the new skill is not listed. From a project root, preview the
-project installation first:
+### Copy-paste installation prompt
+
+Paste this into a new Codex task on the target device:
+
+```text
+Use $skill-installer to install the skill from:
+https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator
+
+Install the research-multiagent-orchestrator skill. After installation, read its
+SKILL.md and configure MYGO for the current project. Run install-workflow.ps1 in
+preview mode first, review the proposed paths and changes, then apply them and run
+verify-workflow.ps1. Never print, read, store, or copy my DeepSeek API key. If
+DEEPSEEK_API_KEY is unavailable or existing instructions suspend DeepSeek, pass
+-LunaOnly to both scripts and do not ask me to re-enable DeepSeek. If global Codex
+changes are not authorized, also pass -ProjectOnly; do not modify
+~/.codex/config.toml, ~/.codex/agents, or the global AGENTS.md. In either restricted
+mode, keep long-context work with the primary agent, use Luna by task difficulty,
+and reserve Terra for diagnosed sequential fallback. Tell me when a full Codex
+Desktop restart is required.
+```
+
+The skill can be installed without `DEEPSEEK_API_KEY`. In that case the primary
+agent, Luna workers, Terra fallback, task records, validation, and archival remain
+available; DeepSeek routes remain unavailable until the environment variable is
+set and Codex is fully restarted.
+
+Use `-LunaOnly` to install and verify Luna/Terra without installing or enabling any
+DeepSeek provider or worker. Add `-ProjectOnly` when MYGO may update only the current
+project; this intentionally leaves all user-level Codex configuration untouched.
+Project-only mode installs project protocols and routing instructions, but requires
+compatible Luna agents to have already been configured independently at user level.
+
+### Manual project installation
+
+After the skill is installed, preview the project changes from the project root:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File `

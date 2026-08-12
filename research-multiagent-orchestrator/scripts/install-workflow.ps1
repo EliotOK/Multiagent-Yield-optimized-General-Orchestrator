@@ -4,7 +4,9 @@ param(
     [string]$ProjectRoot,
     [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }),
     [switch]$Apply,
-    [switch]$ForceAgentUpdate
+    [switch]$ForceAgentUpdate,
+    [switch]$LunaOnly,
+    [switch]$ProjectOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,6 +106,7 @@ function Set-ManagedBlock {
     }
 }
 
+if (-not $ProjectOnly) {
 Ensure-Directory $CodexHome
 Ensure-Directory (Join-Path $CodexHome 'agents')
 
@@ -114,11 +117,13 @@ $oldConfig = if (Test-Path -LiteralPath $configPath) {
 $newConfig = $oldConfig
 $newConfig = Set-TomlSetting $newConfig 'agents' 'enabled' 'true'
 $newConfig = Set-TomlSetting $newConfig 'agents' 'max_concurrent_threads_per_session' '2'
-$newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'name' '"DeepSeek"'
-$newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'base_url' '"https://api.deepseek.com/"'
-$newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'wire_api' '"responses"'
-$newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'env_key' '"DEEPSEEK_API_KEY"'
-$newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'supports_websockets' 'false'
+if (-not $LunaOnly) {
+    $newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'name' '"DeepSeek"'
+    $newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'base_url' '"https://api.deepseek.com/"'
+    $newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'wire_api' '"responses"'
+    $newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'env_key' '"DEEPSEEK_API_KEY"'
+    $newConfig = Set-TomlSetting $newConfig 'model_providers.deepseek' 'supports_websockets' 'false'
+}
 $newConfig = Normalize-Newlines $newConfig
 $oldConfigNormalized = Normalize-Newlines $oldConfig
 if ($newConfig -cne $oldConfigNormalized) {
@@ -131,6 +136,7 @@ if ($newConfig -cne $oldConfigNormalized) {
 
 $agentSource = Join-Path $AssetRoot 'agents'
 foreach ($source in Get-ChildItem -LiteralPath $agentSource -Filter '*.toml' -File) {
+    if ($LunaOnly -and $source.Name -like 'deepseek-*') { continue }
     $target = Join-Path (Join-Path $CodexHome 'agents') $source.Name
     $sourceText = Get-Content -LiteralPath $source.FullName -Raw -Encoding UTF8
     $targetText = if (Test-Path -LiteralPath $target) {
@@ -152,7 +158,8 @@ foreach ($source in Get-ChildItem -LiteralPath $agentSource -Filter '*.toml' -Fi
 }
 
 $globalAgentsPath = Join-Path $CodexHome 'AGENTS.md'
-$globalBlock = Get-Content -LiteralPath (Join-Path $AssetRoot 'global\AGENTS.md') -Raw -Encoding UTF8
+$globalAsset = if ($LunaOnly) { 'global\AGENTS.luna-only.md' } else { 'global\AGENTS.md' }
+$globalBlock = Get-Content -LiteralPath (Join-Path $AssetRoot $globalAsset) -Raw -Encoding UTF8
 $oldGlobal = if (Test-Path -LiteralPath $globalAgentsPath) {
     Get-Content -LiteralPath $globalAgentsPath -Raw -Encoding UTF8
 } else { '' }
@@ -169,6 +176,7 @@ else {
         -StartMarker '<!-- research-multiagent-orchestrator-global:start -->' `
         -EndMarker '<!-- research-multiagent-orchestrator-global:end -->'
 }
+}
 
 foreach ($relative in @('.codex', '.codex\tasks', '.codex\bindings',
         '.codex\diagnostics', 'work', 'work\worker_state')) {
@@ -183,6 +191,8 @@ task_directory = "$rootForToml/.codex/tasks"
 binding_directory = "$rootForToml/.codex/bindings"
 state_directory = "$rootForToml/work/worker_state"
 protocol_version = 3
+deepseek_enabled = $(((-not $LunaOnly) -and (-not $ProjectOnly)).ToString().ToLowerInvariant())
+installation_scope = "$(if ($ProjectOnly) { 'project-only' } else { 'user-and-project' })"
 "@
 $oldDescriptor = if (Test-Path -LiteralPath $descriptorPath) {
     Get-Content -LiteralPath $descriptorPath -Raw -Encoding UTF8
@@ -195,7 +205,8 @@ if ($descriptor.Trim() -cne $oldDescriptor.Trim()) {
     }
 }
 
-$agentsBlock = Get-Content -LiteralPath (Join-Path $AssetRoot 'project\AGENTS.block.md') -Raw -Encoding UTF8
+$projectAsset = if ($LunaOnly -or $ProjectOnly) { 'project\AGENTS.luna-only.block.md' } else { 'project\AGENTS.block.md' }
+$agentsBlock = Get-Content -LiteralPath (Join-Path $AssetRoot $projectAsset) -Raw -Encoding UTF8
 Set-ManagedBlock -Path (Join-Path $ProjectRoot 'AGENTS.md') -Block $agentsBlock `
     -StartMarker '<!-- research-multiagent-orchestrator:start -->' `
     -EndMarker '<!-- research-multiagent-orchestrator:end -->'
@@ -206,13 +217,15 @@ Set-ManagedBlock -Path (Join-Path $ProjectRoot '.gitignore') -Block $ignoreBlock
     -EndMarker '# research-multiagent-orchestrator:end'
 
 $key = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
-if ([string]::IsNullOrWhiteSpace($key)) {
+if (-not $LunaOnly -and -not $ProjectOnly -and [string]::IsNullOrWhiteSpace($key)) {
     Add-Action 'WARNING     DEEPSEEK_API_KEY is not present at Windows User scope'
 }
 $key = $null
 
 $mode = if ($Apply) { 'APPLY' } else { 'DRY_RUN' }
 Write-Output "MODE=$mode"
+Write-Output "INSTALL_SCOPE=$(if ($ProjectOnly) { 'PROJECT_ONLY' } else { 'USER_AND_PROJECT' })"
+Write-Output "DEEPSEEK_MODE=$(if ($LunaOnly -or $ProjectOnly) { 'DISABLED' } else { 'ENABLED' })"
 $Actions | ForEach-Object { Write-Output $_ }
 if (-not $Apply) {
     Write-Output 'No files were changed. Review the plan and rerun with -Apply.'

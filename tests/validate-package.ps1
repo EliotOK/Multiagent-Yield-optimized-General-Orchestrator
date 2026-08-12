@@ -8,6 +8,13 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
 $RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\')
 $SkillRoot = Join-Path $RepositoryRoot 'research-multiagent-orchestrator'
 
+foreach ($relative in @('README.md', 'README.zh-CN.md')) {
+    $path = Join-Path $RepositoryRoot $relative
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Required bilingual repository file is missing: $path"
+    }
+}
+
 foreach ($relative in @(
     'SKILL.md', 'agents\openai.yaml', 'scripts\install-workflow.ps1',
     'scripts\create-task.ps1', 'scripts\close-task.ps1',

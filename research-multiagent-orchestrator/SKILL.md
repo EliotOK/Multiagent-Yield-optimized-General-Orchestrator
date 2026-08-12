@@ -51,6 +51,15 @@ powershell -ExecutionPolicy Bypass -File <skill>/scripts/install-workflow.ps1 -P
 Review the preview, then rerun with `-Apply`. Never put an API key in a file or
 command argument. Require `DEEPSEEK_API_KEY` through the environment.
 
+If the key is unavailable or existing instructions suspend DeepSeek, pass
+`-LunaOnly` to installation and verification. This must skip the DeepSeek provider
+and workers, install Luna/Terra routing, and record `deepseek_enabled = false` in
+the project descriptor. If user-level Codex changes are not authorized, also pass
+`-ProjectOnly`; modify only the project and do not touch `config.toml`, the global
+agents directory, or global `AGENTS.md`. Project-only mode requires suitable Luna
+agents to be configured independently at user level. Never ask the user to relax a
+DeepSeek suspension merely to run MYGO.
+
 ## Delegate safely
 
 Read [task-protocol.md](references/task-protocol.md) before spawning a worker.

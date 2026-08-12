@@ -53,6 +53,46 @@ try {
         throw 'Unsafe legacy migration modified AGENTS.md despite refusal.'
     }
 
+    $lunaProject = Join-Path $testRoot 'luna-project'
+    $lunaCodex = Join-Path $testRoot 'luna-codex-home'
+    New-Item -ItemType Directory -Path $lunaProject -Force | Out-Null
+    & (Join-Path $SkillRoot 'scripts\install-workflow.ps1') `
+        -ProjectRoot $lunaProject -CodexHome $lunaCodex -LunaOnly -Apply
+    if (-not $?) { throw 'Luna-only installer smoke test failed.' }
+    if (Test-Path -LiteralPath (Join-Path $lunaCodex 'agents\deepseek-context-worker.toml')) {
+        throw 'Luna-only mode installed a DeepSeek worker.'
+    }
+    if ((Get-Content -LiteralPath (Join-Path $lunaCodex 'config.toml') -Raw) -match
+        '\[model_providers\.deepseek\]') {
+        throw 'Luna-only mode configured the DeepSeek provider.'
+    }
+    & (Join-Path $SkillRoot 'scripts\verify-workflow.ps1') `
+        -ProjectRoot $lunaProject -CodexHome $lunaCodex -LunaOnly
+    if (-not $?) { throw 'Luna-only verification failed.' }
+    $deepSeekRejected = $false
+    try {
+        & (Join-Path $SkillRoot 'scripts\create-task.ps1') `
+            -ProjectRoot $lunaProject -Worker deepseek_context_worker `
+            -Objective 'This task must be rejected.'
+    }
+    catch { $deepSeekRejected = $true }
+    if (-not $deepSeekRejected) { throw 'Luna-only mode did not block DeepSeek task creation.' }
+
+    $projectOnlyRoot = Join-Path $testRoot 'project-only'
+    $untouchedCodex = Join-Path $testRoot 'untouched-codex-home'
+    New-Item -ItemType Directory -Path $projectOnlyRoot -Force | Out-Null
+    & (Join-Path $SkillRoot 'scripts\install-workflow.ps1') `
+        -ProjectRoot $projectOnlyRoot -CodexHome $untouchedCodex `
+        -LunaOnly -ProjectOnly -Apply
+    if (-not $?) { throw 'Project-only installer smoke test failed.' }
+    if (Test-Path -LiteralPath $untouchedCodex) {
+        throw 'Project-only mode created or modified the supplied Codex home.'
+    }
+    & (Join-Path $SkillRoot 'scripts\verify-workflow.ps1') `
+        -ProjectRoot $projectOnlyRoot -CodexHome $untouchedCodex `
+        -LunaOnly -ProjectOnly
+    if (-not $?) { throw 'Project-only verification failed.' }
+
     Write-Output 'INSTALL_SMOKE=PASS'
 }
 finally {

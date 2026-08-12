@@ -2,7 +2,9 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ProjectRoot,
-    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' })
+    [string]$CodexHome = $(if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }),
+    [switch]$LunaOnly,
+    [switch]$ProjectOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,16 +17,23 @@ function Add-Check([string]$Name, [string]$Status, [string]$Detail) {
 }
 
 $config = Join-Path $CodexHome 'config.toml'
+if (-not $ProjectOnly) {
 Add-Check 'config' $(if (Test-Path $config) { 'PASS' } else { 'FAIL' }) $config
 if (Test-Path $config) {
     $text = Get-Content -LiteralPath $config -Raw -Encoding UTF8
     Add-Check 'agents_enabled' $(if ($text -match '(?ms)^\[agents\].*?^enabled\s*=\s*true') { 'PASS' } else { 'FAIL' }) 'agents.enabled=true'
-    Add-Check 'deepseek_provider' $(if ($text -match '(?ms)^\[model_providers\.deepseek\].*?^env_key\s*=\s*"DEEPSEEK_API_KEY"') { 'PASS' } else { 'FAIL' }) 'provider uses environment key'
+    if (-not $LunaOnly) {
+        Add-Check 'deepseek_provider' $(if ($text -match '(?ms)^\[model_providers\.deepseek\].*?^env_key\s*=\s*"DEEPSEEK_API_KEY"') { 'PASS' } else { 'FAIL' }) 'provider uses environment key'
+    }
 }
 
-foreach ($name in @('deepseek-context-worker.toml', 'deepseek-context-reasoning-worker.toml', 'deepseek-batch-worker.toml',
-        'luna-medium-worker.toml', 'luna-high-worker.toml', 'luna-max-worker.toml',
-        'terra-fallback-worker.toml')) {
+$agentNames = @('luna-medium-worker.toml', 'luna-high-worker.toml', 'luna-max-worker.toml',
+    'terra-fallback-worker.toml')
+if (-not $LunaOnly) {
+    $agentNames = @('deepseek-context-worker.toml', 'deepseek-context-reasoning-worker.toml',
+        'deepseek-batch-worker.toml') + $agentNames
+}
+foreach ($name in $agentNames) {
     $path = Join-Path (Join-Path $CodexHome 'agents') $name
     Add-Check "agent:$name" $(if (Test-Path $path) { 'PASS' } else { 'FAIL' }) $path
 }
@@ -53,6 +62,7 @@ if (Test-Path $globalAgents) {
         $(if ($globalMigrated) { 'PASS' } else { 'FAIL' }) `
         'legacy positive routing instructions must be absent'
 }
+}
 
 $descriptor = Join-Path $ProjectRoot '.codex\research-multiagent.toml'
 Add-Check 'descriptor' $(if (Test-Path $descriptor) { 'PASS' } else { 'FAIL' }) $descriptor
@@ -61,6 +71,10 @@ if (Test-Path $descriptor) {
     Add-Check 'protocol_version' `
         $(if ($descriptorText -match '(?m)^protocol_version\s*=\s*3\s*$') { 'PASS' } else { 'FAIL' }) `
         'protocol_version=3'
+    $expectedDeepSeek = if ($LunaOnly -or $ProjectOnly) { 'false' } else { 'true' }
+    Add-Check 'deepseek_mode' `
+        $(if ($descriptorText -match "(?m)^deepseek_enabled\s*=\s*$expectedDeepSeek\s*$") { 'PASS' } else { 'FAIL' }) `
+        "deepseek_enabled=$expectedDeepSeek"
 }
 foreach ($relative in @('.codex\tasks', '.codex\bindings', 'work\worker_state')) {
     $path = Join-Path $ProjectRoot $relative
@@ -84,10 +98,12 @@ if (Test-Path $taskDir) {
 }
 Add-Check 'ready_tasks' $(if ($ready.Count -le 1) { 'PASS' } else { 'FAIL' }) "count=$($ready.Count)"
 
-$key = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
-$keyStatus = if ([string]::IsNullOrWhiteSpace($key)) { 'WARN' } else { 'PASS' }
-Add-Check 'deepseek_key_user_scope' $keyStatus $(if ($keyStatus -eq 'PASS') { 'present; value hidden' } else { 'missing at User scope' })
-$key = $null
+if (-not $LunaOnly -and -not $ProjectOnly) {
+    $key = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
+    $keyStatus = if ([string]::IsNullOrWhiteSpace($key)) { 'WARN' } else { 'PASS' }
+    Add-Check 'deepseek_key_user_scope' $keyStatus $(if ($keyStatus -eq 'PASS') { 'present; value hidden' } else { 'missing at User scope' })
+    $key = $null
+}
 
 $results | Format-Table -AutoSize -Wrap
 $failed = @($results | Where-Object Status -eq 'FAIL')
