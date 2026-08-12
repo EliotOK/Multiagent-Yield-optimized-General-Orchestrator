@@ -1,8 +1,13 @@
-# Research Multi-Agent Orchestrator
+# MYGO
+
+**Multi-agent Yield-optimized General Orchestrator**
 
 Windows-first Codex skill for scientific coding projects that routes work across a
 primary reviewer, DeepSeek V4 Flash long-context workers, and tiered Luna coding
 workers.
+
+The distributable Codex skill keeps the descriptive internal name
+`research-multiagent-orchestrator` so its purpose and trigger remain explicit.
 
 > Status: `v0.1.0-beta.1` release candidate. This is an unofficial community
 > project and is not affiliated with or endorsed by OpenAI or DeepSeek.
