@@ -17,6 +17,7 @@ foreach ($relative in @('README.md', 'README.zh-CN.md')) {
 
 foreach ($relative in @(
     'SKILL.md', 'agents\openai.yaml', 'scripts\install-workflow.ps1',
+    'scripts\set-deepseek-key.ps1',
     'scripts\create-task.ps1', 'scripts\close-task.ps1',
     'assets\agents\luna-medium-worker.toml',
     'assets\agents\luna-high-worker.toml',

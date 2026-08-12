@@ -11,7 +11,7 @@ MYGO 是一个面向科研编程项目、优先支持 Windows 的 Codex skill。
 发布用 skill 保留内部名称 `research-multiagent-orchestrator`，以便 Codex 能够
 明确识别它的用途和触发条件。
 
-> 当前状态：`v0.1.0-beta.2`。这是非官方社区项目，与 OpenAI 或 DeepSeek
+> 当前状态：`v0.1.0-beta.3`。这是非官方社区项目，与 OpenAI 或 DeepSeek
 > 不存在隶属或背书关系。
 
 ## 工作方式
@@ -57,9 +57,12 @@ https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator
 核对拟修改的路径和内容，再执行 apply，最后运行 verify-workflow.ps1。
 不要输出、读取、保存或复制我的 DeepSeek API key。
 
-如果当前环境没有 DEEPSEEK_API_KEY，或者现有规则明确暂停 DeepSeek，请在
-install-workflow.ps1 和 verify-workflow.ps1 中都使用 -LunaOnly，不要要求我重新
-启用 DeepSeek。如果没有修改全局 Codex 配置的授权，再同时使用 -ProjectOnly；
+先只检查 DEEPSEEK_API_KEY 是否存在，不得读取或输出其值。如果缺失，在 apply
+之前停止，并让我本人在交互式 PowerShell 终端运行 scripts/set-deepseek-key.ps1，
+随后彻底重启 Codex。不要要求我把 key 粘贴进聊天。如果我明确拒绝 DeepSeek，
+或者现有规则明确暂停 DeepSeek，请在 install-workflow.ps1 和
+verify-workflow.ps1 中都使用 -LunaOnly，不要要求我重新启用 DeepSeek。
+如果没有修改全局 Codex 配置的授权，再同时使用 -ProjectOnly；
 不得修改 ~/.codex/config.toml、~/.codex/agents 或全局 AGENTS.md。在受限模式中，
 长上下文任务由主 Agent处理；编码任务按难度交给 Luna medium/high/max；Terra
 仅在 Luna 已确认失败后顺序接替。最后告诉我是否需要彻底重启 Codex Desktop。
@@ -67,7 +70,20 @@ install-workflow.ps1 和 verify-workflow.ps1 中都使用 -LunaOnly，不要要�
 
 ### 没有 DeepSeek API key 时
 
-仍然可以安装和使用：
+完整模式在没有 key 时仍可 preview，但 apply 会在写入任何文件之前停止并说明
+处理方法。请用户本人在交互式终端运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  <SKILL_PATH>\scripts\set-deepseek-key.ps1
+```
+
+输入过程不可见，key 不会出现在命令历史或脚本输出中。脚本会把 key 存为 Windows
+用户环境变量，因为 Codex provider 需要从环境变量读取。Windows 环境变量并不是
+加密密码库。请保护 Windows 账户，也不要将 key 放进聊天、命令行、项目文件或
+日志。设置完成后必须彻底重启 Codex Desktop。
+
+如果用户明确选择 `-LunaOnly`，则无需 key，仍然可以安装和使用：
 
 - Codex 主 Agent；
 - Luna medium/high/max；
@@ -75,7 +91,8 @@ install-workflow.ps1 和 verify-workflow.ps1 中都使用 -LunaOnly，不要要�
 - task、binding、状态记录、验证和归档机制。
 
 DeepSeek context、context reasoning 和 batch worker 暂时不可用。以后设置
-`DEEPSEEK_API_KEY` 并彻底重启 Codex Desktop 后即可启用，不需要重新安装 skill。
+`DEEPSEEK_API_KEY` 后，需要不带 `-LunaOnly` 重新运行项目安装并彻底重启 Codex
+Desktop，才能启用 DeepSeek 路由；无需重新下载 skill。
 
 使用 `-LunaOnly` 时，安装器不会写入 DeepSeek provider，也不会安装或启用任何
 DeepSeek worker。若再加 `-ProjectOnly`，安装器只修改当前项目，完全不触碰用户级

@@ -99,10 +99,14 @@ if (Test-Path $taskDir) {
 Add-Check 'ready_tasks' $(if ($ready.Count -le 1) { 'PASS' } else { 'FAIL' }) "count=$($ready.Count)"
 
 if (-not $LunaOnly -and -not $ProjectOnly) {
-    $key = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
-    $keyStatus = if ([string]::IsNullOrWhiteSpace($key)) { 'WARN' } else { 'PASS' }
-    Add-Check 'deepseek_key_user_scope' $keyStatus $(if ($keyStatus -eq 'PASS') { 'present; value hidden' } else { 'missing at User scope' })
-    $key = $null
+    $processKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'Process')
+    $userKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
+    $keyPresent = -not [string]::IsNullOrWhiteSpace($processKey) -or
+        -not [string]::IsNullOrWhiteSpace($userKey)
+    Add-Check 'deepseek_key' $(if ($keyPresent) { 'PASS' } else { 'FAIL' }) `
+        $(if ($keyPresent) { 'present; value hidden' } else { 'missing; run set-deepseek-key.ps1 and restart Codex' })
+    $processKey = $null
+    $userKey = $null
 }
 
 $results | Format-Table -AutoSize -Wrap

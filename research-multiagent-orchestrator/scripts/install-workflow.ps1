@@ -20,6 +20,16 @@ if (-not (Test-Path -LiteralPath $ProjectRoot -PathType Container)) {
     throw "ProjectRoot does not exist: $ProjectRoot"
 }
 
+$processKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'Process')
+$userKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
+$deepSeekKeyPresent = -not [string]::IsNullOrWhiteSpace($processKey) -or
+    -not [string]::IsNullOrWhiteSpace($userKey)
+$processKey = $null
+$userKey = $null
+if (-not $LunaOnly -and -not $ProjectOnly -and -not $deepSeekKeyPresent -and $Apply) {
+    throw 'DEEPSEEK_API_KEY is missing. No files were changed. Run scripts\set-deepseek-key.ps1 in an interactive terminal, fully restart Codex, then retry; or explicitly use -LunaOnly.'
+}
+
 function Add-Action([string]$Message) {
     $script:Actions.Add($Message)
 }
@@ -217,15 +227,16 @@ Set-ManagedBlock -Path (Join-Path $ProjectRoot '.gitignore') -Block $ignoreBlock
     -EndMarker '# research-multiagent-orchestrator:end'
 
 $key = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
-if (-not $LunaOnly -and -not $ProjectOnly -and [string]::IsNullOrWhiteSpace($key)) {
-    Add-Action 'WARNING     DEEPSEEK_API_KEY is not present at Windows User scope'
+if (-not $LunaOnly -and -not $ProjectOnly -and -not $deepSeekKeyPresent) {
+    Add-Action 'ACTION      DEEPSEEK_API_KEY is missing; apply will stop before writing'
+    Add-Action 'ACTION      Run scripts\set-deepseek-key.ps1 interactively, restart Codex, or explicitly choose -LunaOnly'
 }
 $key = $null
 
 $mode = if ($Apply) { 'APPLY' } else { 'DRY_RUN' }
 Write-Output "MODE=$mode"
 Write-Output "INSTALL_SCOPE=$(if ($ProjectOnly) { 'PROJECT_ONLY' } else { 'USER_AND_PROJECT' })"
-Write-Output "DEEPSEEK_MODE=$(if ($LunaOnly -or $ProjectOnly) { 'DISABLED' } else { 'ENABLED' })"
+Write-Output "DEEPSEEK_MODE=$(if ($LunaOnly -or $ProjectOnly) { 'DISABLED' } elseif ($deepSeekKeyPresent) { 'ENABLED' } else { 'PENDING_KEY' })"
 $Actions | ForEach-Object { Write-Output $_ }
 if (-not $Apply) {
     Write-Output 'No files were changed. Review the plan and rerun with -Apply.'

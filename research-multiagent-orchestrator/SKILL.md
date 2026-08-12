@@ -49,7 +49,13 @@ powershell -ExecutionPolicy Bypass -File <skill>/scripts/install-workflow.ps1 -P
 ```
 
 Review the preview, then rerun with `-Apply`. Never put an API key in a file or
-command argument. Require `DEEPSEEK_API_KEY` through the environment.
+command argument. Require `DEEPSEEK_API_KEY` through the environment. When it is
+missing, do not ask for it in chat. Instruct the user to run
+`scripts/set-deepseek-key.ps1` in their own interactive PowerShell terminal. The
+script hides input and never prints the value; it stores the key as a Windows user
+environment variable, which is not an encrypted secret vault. Require a complete
+Codex restart afterward. Full-mode apply must stop before writing when the key is
+missing unless the user explicitly selects `-LunaOnly`.
 
 If the key is unavailable or existing instructions suspend DeepSeek, pass
 `-LunaOnly` to installation and verification. This must skip the DeepSeek provider

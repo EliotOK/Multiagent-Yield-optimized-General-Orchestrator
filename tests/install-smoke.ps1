@@ -11,6 +11,33 @@ $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('rmo-release-smoke-' + [guid]:
 $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
 
 try {
+    $originalProcessKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'Process')
+    $missingKeyProject = Join-Path $testRoot 'missing-key-project'
+    $missingKeyCodex = Join-Path $testRoot 'missing-key-codex-home'
+    New-Item -ItemType Directory -Path $missingKeyProject -Force | Out-Null
+    [Environment]::SetEnvironmentVariable('DEEPSEEK_API_KEY', $null, 'Process')
+    $userKeyForTest = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User')
+    if ([string]::IsNullOrWhiteSpace($userKeyForTest)) {
+        $missingKeyBlocked = $false
+        try {
+            & (Join-Path $SkillRoot 'scripts\install-workflow.ps1') `
+                -ProjectRoot $missingKeyProject -CodexHome $missingKeyCodex -Apply
+        }
+        catch {
+            $missingKeyBlocked = $_.Exception.Message -match 'set-deepseek-key\.ps1'
+        }
+        if (-not $missingKeyBlocked) {
+            throw 'Full-mode apply did not stop with secure key setup guidance.'
+        }
+        if (Test-Path -LiteralPath $missingKeyCodex) {
+            throw 'Missing-key full-mode apply wrote to Codex home before stopping.'
+        }
+        if (Test-Path -LiteralPath (Join-Path $missingKeyProject '.codex')) {
+            throw 'Missing-key full-mode apply wrote to the project before stopping.'
+        }
+    }
+    $userKeyForTest = $null
+    [Environment]::SetEnvironmentVariable('DEEPSEEK_API_KEY', 'release-smoke-placeholder', 'Process')
     $testProject = Join-Path $testRoot 'project'
     $testCodex = Join-Path $testRoot 'codex-home'
     New-Item -ItemType Directory -Path $testProject -Force | Out-Null
@@ -96,6 +123,7 @@ try {
     Write-Output 'INSTALL_SMOKE=PASS'
 }
 finally {
+    [Environment]::SetEnvironmentVariable('DEEPSEEK_API_KEY', $originalProcessKey, 'Process')
     $resolved = [IO.Path]::GetFullPath($testRoot)
     if ($resolved.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase) -and
         (Test-Path -LiteralPath $resolved)) {
