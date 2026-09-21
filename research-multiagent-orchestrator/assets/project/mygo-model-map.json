@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "default_primary": "ASK",
+  "default_primary": "CURRENT",
   "primary_profiles": {
     "ASTRA": {
       "model": "gpt-6-astra",

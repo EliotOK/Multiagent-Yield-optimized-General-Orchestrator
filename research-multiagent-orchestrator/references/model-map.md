@@ -5,13 +5,13 @@ MYGO keeps stable technical roles and resolves their models from the project-lev
 model releases. The technical role remains the audit identity; `codename` is a
 human-facing child-thread name and has no behavioral or personality effect.
 
-## Primary selection
+## Primary resolution
 
-`default_primary` accepts:
-
-- `ASK` (recommended): ask once per conversation;
-- `ASTRA`: use the configured Astra profile unless the user chooses otherwise;
-- `SOL`: use the configured Sol profile unless the user chooses otherwise.
+`default_primary` must be `CURRENT`. This declares that the active composer model,
+not a second user selection, determines the primary profile. The resolver compares
+the current model with `primary_profiles` before every delegation. A matching entry
+provides a known alias; an unmapped readable model resolves to the neutral
+`CURRENT` profile and remains valid without a map edit.
 
 The shipped defaults are:
 
@@ -20,8 +20,11 @@ ASTRA -> gpt-6-astra / medium
 SOL   -> gpt-5.6-sol / high
 ```
 
-These entries describe the required composer/root configuration. A skill cannot
-change the current root model or reasoning effort by editing a subagent file.
+These entries are advisory aliases for commonly used composer models. The observed
+reasoning effort is recorded in each binding; a mismatch with the recommended effort
+is visible but does not silently change the composer. A skill cannot change the
+current root model or reasoning effort by editing a subagent file. New models become
+the `CURRENT` primary automatically as soon as their identity is readable.
 
 ## Stable roles and display codenames
 

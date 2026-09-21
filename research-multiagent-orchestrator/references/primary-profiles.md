@@ -1,30 +1,26 @@
 # Primary profiles
 
-MYGO uses one primary controller per conversation. The selected primary alone owns
+MYGO uses the current composer as its only primary controller. That primary alone owns
 task interpretation, scientific judgment, architecture, worker dispatch, workspace
 changes, acceptance decisions, final validation, and integration.
 
-## First invocation
+## Current-session resolution
 
-On the first MYGO invocation in a conversation, resolve
-`.codex/mygo-model-map.json`, then:
+Before each delegation, resolve `.codex/mygo-model-map.json` and run
+`scripts/resolve-primary-profile.ps1`. The current thread model maps directly to
+`ASTRA` or `SOL`; any other readable model resolves to `CURRENT`. No primary-
+selection question is shown. Re-resolving allows a composer-model change to take
+effect without preserving stale conversation state.
 
-1. If the user explicitly selected `ASTRA` or `SOL`, accept that choice.
-2. If `default_primary` is `ASTRA` or `SOL`, use that profile. If it is `ASK`, use
-   the native structured question UI when it is available and ask
-   the user to choose **Astra primary** or **Sol primary**.
-3. If structured input is unavailable, ask one concise plain-text question and
-   wait. Do not dispatch a worker or modify files before the choice is known.
-4. Reuse the choice for the remainder of the conversation. Ask again only when the
-   user explicitly requests a profile switch.
+The resolver uses explicit observed values in tests and otherwise reads only the
+latest model and reasoning-effort metadata associated with `CODEX_THREAD_ID`. If
+the current model is missing or ambiguous, stop before task creation and ask the
+user to switch or repair the composer session. An unmapped but readable model is
+already a valid `CURRENT` primary; it does not need a map entry. A skill cannot
+replace the root model, and a card selection cannot make a mismatched model the
+primary. Never represent a secondary subagent as the native root controller.
 
-A skill cannot silently replace the root model of the current conversation. When
-the selected profile does not match the current root model and the identity is
-known, explain the mismatch and ask the user to switch the composer model or start
-a matching task. When identity cannot be verified, say so and ask the user to
-confirm it. Never represent a secondary subagent as the native root controller.
-
-## Astra primary
+## Known Astra alias
 
 Use an Astra-rooted conversation for ambiguous, high-risk, or architecture-heavy
 work where stronger global reasoning justifies its higher quota cost.
@@ -36,7 +32,7 @@ work where stronger global reasoning justifies its higher quota cost.
   high-risk decision, a disputed finding, or an explicit user request.
 - Give the Sol reviewer a compact frozen evidence bundle and one bounded question.
 
-## Sol primary
+## Known Sol alias
 
 Use a Sol-rooted conversation for the established, quota-predictable workflow and
 most routine scientific engineering.

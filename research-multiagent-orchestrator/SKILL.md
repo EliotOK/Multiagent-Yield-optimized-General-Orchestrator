@@ -1,6 +1,6 @@
 ---
 name: research-multiagent-orchestrator
-description: MYGO routes and supervises scientific coding through one conversation-scoped Astra or Sol primary, DeepSeek V4.1 Flash long-context workers, tiered Luna coding workers, and read-only cross-reviewers. Use when Codex must inspect a large R/Python/GIS repository, reconstruct data lineage, audit schemas or variables, process long logs, make bounded repetitive edits, debug a difficult localized failure, tune worker latency, or install, verify, repair, and operate this planner-worker-reviewer workflow.
+description: MYGO routes and supervises scientific coding through the current-session model as primary, with optional known-profile aliases such as Astra or Sol, DeepSeek V4.1 Flash long-context workers, tiered Luna coding workers, and read-only cross-reviewers. Use when Codex must inspect a large R/Python/GIS repository, reconstruct data lineage, audit schemas or variables, process long logs, make bounded repetitive edits, debug a difficult localized failure, tune worker latency, or install, verify, repair, and operate this planner-worker-reviewer workflow.
 ---
 
 # Research Multi-Agent Orchestrator
@@ -10,31 +10,32 @@ judgment, architecture, acceptance criteria, final diff review, validation, and
 integration. Delegate only bounded investigation, implementation, or advisory
 review.
 
-## Choose the primary profile
+## Resolve the current primary
 
 Read [primary-profiles.md](references/primary-profiles.md) before any delegation.
 Read [model-map.md](references/model-map.md) when selecting or changing models,
 reasoning effort, providers, or worker codenames. Resolve the project's
-`.codex/mygo-model-map.json` before delegation. On the first MYGO invocation in a
-conversation, honor an explicit user choice; otherwise follow `default_primary`.
-When it is `ASK`, ask the user to choose **Astra primary** or **Sol primary**.
-Prefer a native structured choice card when available; otherwise ask one concise
-text question and wait. Do not spawn workers or modify files before the choice is
-known.
+`.codex/mygo-model-map.json` before delegation. The shipped
+`default_primary=CURRENT` means the active composer model is authoritative. Before
+every delegated task, run `scripts/resolve-primary-profile.ps1`; it returns a known
+profile alias when the model map contains one, otherwise it returns the neutral
+`CURRENT` profile with the exact observed model and reasoning effort. Do not ask the
+user to choose a logical primary profile.
 
-Treat the choice as conversation-scoped. Do not ask again unless the user requests
-a switch. Never imply that a skill changed the root model: if the selected profile
-does not match the current conversation model, ask the user to switch the composer
-model or start a matching task. If the current model cannot be verified, say so and
-ask the user to confirm it.
+The resolver reads only model metadata associated with `CODEX_THREAD_ID`; it never
+returns conversation content. Treat its session-file format as a compatibility
+adapter rather than a stable public API. If thread metadata or the model identity is
+unavailable, do not dispatch. A readable but unmapped model is valid and becomes the
+`CURRENT` primary. Re-resolve before each delegation so a composer-model change takes
+effect immediately.
 
-Confirm that the selected root model and reasoning effort match the resolved primary
-profile. The shipped defaults are Astra at medium and Sol at high. Only the selected
-primary may dispatch write-capable workers, modify or integrate
-code, and accept the result. In Sol-primary sessions, `astra_review_worker` is an
-optional quota-conscious read-only second opinion. In Astra-primary sessions,
-`sol_review_worker` is the corresponding read-only second opinion. Never use either
-reviewer as a second controller.
+The shipped mappings are Astra at medium and Sol at high, but they are advisory
+aliases rather than an allow-list. A different observed effort is recorded and the
+current model remains primary. Only the resolved primary may dispatch write-capable
+workers, modify or integrate code, and accept the result. The Astra/Sol reviewer
+workers are available only for their corresponding known opposite profiles; an
+unmapped current model uses no profile-specific reviewer. Never use a reviewer as a
+second controller.
 
 ## Select a route
 
@@ -61,11 +62,11 @@ Use these defaults:
 - Use `terra_readonly_fallback_worker` to reconstruct evidence after a diagnosed
   failure without workspace writes. Use `terra_fallback_worker` only when a new
   bounded recovery task genuinely requires writes.
-- Keep scientific decisions and final review with the selected primary agent.
-- Use `astra_review_worker` only in a Sol-primary session for an explicit or
+- Keep scientific decisions and final review with the resolved current primary.
+- Use `astra_review_worker` only in a known Sol-primary session for an explicit or
   high-risk second opinion. It is medium-reasoning, read-only, and single-pass by
   default.
-- Use `sol_review_worker` only in an Astra-primary session for an explicit or
+- Use `sol_review_worker` only in a known Astra-primary session for an explicit or
   high-risk second opinion. It is read-only and advisory.
 - Do not delegate a trivial edit when coordination costs more than the work.
 
@@ -113,9 +114,11 @@ to run MYGO.
 Read [task-protocol.md](references/task-protocol.md) before spawning a worker.
 Inspect repository status and relevant project instructions first.
 
-Create an immutable task and binding with `scripts/create-task.ps1`, including the
-selected `-PrimaryProfile ASTRA` or `-PrimaryProfile SOL` and a concise English
-`-TaskLabel` that describes the work. Before task creation, ensure the label is
+Create an immutable task and binding with `scripts/create-task.ps1`; its default
+`-PrimaryProfile AUTO` resolves and verifies the current composer automatically.
+Use explicit `-ObservedPrimaryModel` and `-ObservedPrimaryEffort` only for an
+already observed runtime value or an isolated test, never to simulate another
+primary. Include a concise English `-TaskLabel` that describes the work. Before task creation, ensure the label is
 unique among child tasks in the current conversation; use a readable sequence such
 as `schema audit 2` only when needed. Supply the
 generated task ID, absolute task path, binding path, SHA-256, canonical root, and

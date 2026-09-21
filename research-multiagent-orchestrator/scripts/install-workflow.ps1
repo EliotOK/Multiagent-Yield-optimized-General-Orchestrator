@@ -189,13 +189,18 @@ function Set-TomlSetting {
         if (-not $inBasicMultiline -and ([regex]::Matches($line, "'''").Count % 2 -eq 1)) {
             $inLiteralMultiline = -not $inLiteralMultiline
         }
-        if (-not $inBasicMultiline -and -not $inLiteralMultiline -and
-            $line -match '^\s*\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?$') {
-            $headers += [pscustomobject]@{ Name = $Matches[1]; Index = $i }
+        if (-not $inBasicMultiline -and -not $inLiteralMultiline) {
+            $tableMatch = [regex]::Match($line,
+                '^\s*(?:\[\[([A-Za-z0-9_.-]+)\]\]|\[([A-Za-z0-9_.-]+)\])\s*(?:#.*)?$')
+            if ($tableMatch.Success) {
+                $isArray = $tableMatch.Groups[1].Success
+                $name = if ($isArray) { $tableMatch.Groups[1].Value } else { $tableMatch.Groups[2].Value }
+                $headers += [pscustomobject]@{ Name = $name; Index = $i; IsArray = $isArray }
+            }
         }
     }
     if ($inBasicMultiline -or $inLiteralMultiline) { throw 'Unterminated multiline TOML string.' }
-    $matches = @($headers | Where-Object Name -eq $Section)
+    $matches = @($headers | Where-Object { $_.Name -eq $Section -and -not $_.IsArray })
     if ($matches.Count -gt 1) { throw "Duplicate TOML section is ambiguous: [$Section]" }
     if ($matches.Count -eq 0) {
         $separator = if ([string]::IsNullOrWhiteSpace($Text)) { '' } else { "`r`n`r`n" }
@@ -522,7 +527,21 @@ if (-not (Test-Path -LiteralPath $modelMapPath -PathType Leaf)) {
     }
 }
 else {
-    Add-Action "PRESERVE    $modelMapPath"
+    $existingMapText = Get-Content -LiteralPath $modelMapPath -Raw -Encoding UTF8
+    try { $existingMap = $existingMapText | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw "Existing MYGO model map is invalid JSON: $modelMapPath" }
+    if ([string]$existingMap.default_primary -ne 'CURRENT') {
+        $primaryMatches = @([regex]::Matches($existingMapText,
+            '(?m)("default_primary"\s*:\s*")[^"]*(")'))
+        if ($primaryMatches.Count -ne 1) {
+            throw 'Existing MYGO model map has no unique default_primary field.'
+        }
+        $migratedMapText = [regex]::Replace($existingMapText,
+            '(?m)("default_primary"\s*:\s*")[^"]*(")', '${1}CURRENT${2}', 1)
+        Add-Action "UPDATE      $modelMapPath default_primary=CURRENT"
+        if ($Apply) { Write-AtomicText $modelMapPath $migratedMapText }
+    }
+    else { Add-Action "PRESERVE    $modelMapPath" }
 }
 
 $descriptorPath = Join-Path $ProjectRoot '.codex\research-multiagent.toml'
@@ -532,8 +551,8 @@ canonical_root = "$rootForToml"
 task_directory = "$rootForToml/.codex/tasks"
 binding_directory = "$rootForToml/.codex/bindings"
 state_directory = "$rootForToml/work/worker_state"
-protocol_version = 3
-primary_profile_mode = "session-choice"
+protocol_version = 4
+primary_profile_mode = "current-session"
 deepseek_enabled = $(((-not $LunaOnly).ToString().ToLowerInvariant()))
 model_map = "$rootForToml/.codex/mygo-model-map.json"
 model_map_schema = 1

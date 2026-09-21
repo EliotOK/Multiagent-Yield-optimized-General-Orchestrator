@@ -91,7 +91,7 @@ if (Test-Path -LiteralPath $modelMapPath -PathType Leaf) {
         $modelMap = Get-Content -LiteralPath $modelMapPath -Raw -Encoding UTF8 | ConvertFrom-Json
         Add-Check 'model_map_schema' $(if ($modelMap.schema_version -eq 1) { 'PASS' } else { 'FAIL' }) ([string]$modelMap.schema_version)
         Add-Check 'default_primary' `
-            $(if ($modelMap.default_primary -in @('ASK', 'ASTRA', 'SOL')) { 'PASS' } else { 'FAIL' }) `
+            $(if ($modelMap.default_primary -eq 'CURRENT') { 'PASS' } else { 'FAIL' }) `
             ([string]$modelMap.default_primary)
         Add-Check 'primary_astra' `
             $(if ($modelMap.primary_profiles.ASTRA.model -match '^[A-Za-z0-9._:/-]+$' -and
@@ -180,11 +180,11 @@ Add-Check 'descriptor' $(if (Test-Path -LiteralPath $descriptor -PathType Leaf) 
 if (Test-Path -LiteralPath $descriptor -PathType Leaf) {
     $descriptorText = Get-Content -LiteralPath $descriptor -Raw -Encoding UTF8
     Add-Check 'protocol_version' `
-        $(if ($descriptorText -match '(?m)^protocol_version\s*=\s*3\s*$') { 'PASS' } else { 'FAIL' }) `
-        'protocol_version=3'
+        $(if ($descriptorText -match '(?m)^protocol_version\s*=\s*4\s*$') { 'PASS' } else { 'FAIL' }) `
+        'protocol_version=4'
     Add-Check 'primary_profile_mode' `
-        $(if ($descriptorText -match '(?m)^primary_profile_mode\s*=\s*"session-choice"\s*$') { 'PASS' } else { 'FAIL' }) `
-        'primary_profile_mode=session-choice'
+        $(if ($descriptorText -match '(?m)^primary_profile_mode\s*=\s*"current-session"\s*$') { 'PASS' } else { 'FAIL' }) `
+        'primary_profile_mode=current-session'
     Add-Check 'descriptor_model_map_schema' `
         $(if ($descriptorText -match '(?m)^model_map_schema\s*=\s*1\s*$') { 'PASS' } else { 'FAIL' }) `
         'model_map_schema=1'

@@ -86,8 +86,8 @@ if (Test-Path -LiteralPath $archiveRoot -PathType Container) {
     $archivedStateObject = Get-Content -LiteralPath $archivedState -Raw | ConvertFrom-Json
     if ($archivedHash -ne [string]$archivedBindingObject.task_sha256 -or
         $archivedBindingObject.task_id -ne $TaskId -or
-        $archivedBindingObject.protocol_version -ne 3 -or
-        $archivedStateObject.protocol_version -ne 3 -or
+        $archivedBindingObject.protocol_version -ne 4 -or
+        $archivedStateObject.protocol_version -ne 4 -or
         $archivedStateObject.task_id -ne $TaskId -or
         $archivedStateObject.worker_name -ne $archivedBindingObject.worker_name -or
         $archivedStateObject.state -ne $archivedBindingObject.status) {

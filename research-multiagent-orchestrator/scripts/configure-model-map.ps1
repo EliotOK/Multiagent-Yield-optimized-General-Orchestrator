@@ -21,8 +21,8 @@ if (-not (Test-Path -LiteralPath $MapPath -PathType Leaf)) {
 
 $map = Get-Content -LiteralPath $MapPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($map.schema_version -ne 1) { throw 'Unsupported MYGO model-map schema.' }
-if ($map.default_primary -notin @('ASK', 'ASTRA', 'SOL')) {
-    throw 'default_primary must be ASK, ASTRA, or SOL.'
+if ([string]$map.default_primary -ne 'CURRENT') {
+    throw 'default_primary must be CURRENT.'
 }
 
 $validEfforts = @('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')

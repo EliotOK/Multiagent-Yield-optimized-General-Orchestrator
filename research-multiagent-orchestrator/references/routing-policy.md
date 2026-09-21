@@ -83,7 +83,7 @@ Cross-review is exceptional, not a mandatory stage. Use it only for an explicit
 request, a high-impact scientific or architectural decision, or a genuine dispute
 that independent reasoning can resolve. Give the reviewer a compact immutable
 evidence bundle and one question. The reviewer cannot write, dispatch, accept, or
-supersede the selected primary.
+supersede the resolved current primary.
 
 Do not spawn `astra_review_worker` when Astra is already the primary, or
 `sol_review_worker` when Sol is already the primary. Do not use a reviewer to repeat

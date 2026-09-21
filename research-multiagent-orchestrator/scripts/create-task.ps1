@@ -21,8 +21,10 @@ param(
     [string]$Mode = 'AUTO',
     [ValidateSet('LOCAL_ONLY', 'APPROVED_EXTERNAL', 'PUBLIC')]
     [string]$DataSensitivity = 'LOCAL_ONLY',
-    [ValidateSet('ASTRA', 'SOL', 'UNSPECIFIED')]
-    [string]$PrimaryProfile = 'UNSPECIFIED',
+    [ValidateSet('AUTO', 'CURRENT', 'ASTRA', 'SOL')]
+    [string]$PrimaryProfile = 'AUTO',
+    [string]$ObservedPrimaryModel = '',
+    [string]$ObservedPrimaryEffort = '',
     [int]$ExpectedMinutes = 0,
     [int]$FirstObservationSeconds = 30,
     [string]$PreviousFailureTaskId = ''
@@ -52,11 +54,11 @@ $rootForToml = $ProjectRoot.Replace('\', '/')
 if ($descriptorText -notmatch ('(?m)^canonical_root\s*=\s*"' + [regex]::Escape($rootForToml) + '"\s*$')) {
     throw 'Workflow descriptor canonical root mismatch.'
 }
-if ($descriptorText -notmatch '(?m)^protocol_version\s*=\s*3\s*$') {
+if ($descriptorText -notmatch '(?m)^protocol_version\s*=\s*4\s*$') {
     throw 'Workflow descriptor protocol version is missing or unsupported.'
 }
-if ($descriptorText -notmatch '(?m)^primary_profile_mode\s*=\s*"session-choice"\s*$') {
-    throw 'Workflow descriptor does not support session primary-profile selection. Reinstall MYGO.'
+if ($descriptorText -notmatch '(?m)^primary_profile_mode\s*=\s*"current-session"\s*$') {
+    throw 'Workflow descriptor does not support current-session primary resolution. Reinstall MYGO.'
 }
 if ($descriptorText -notmatch '(?m)^model_map_schema\s*=\s*1\s*$') {
     throw 'Workflow descriptor has an unsupported model-map schema. Reinstall MYGO.'
@@ -70,6 +72,9 @@ if (-not (Test-Path -LiteralPath $modelMapPath -PathType Leaf)) {
 }
 $modelMap = Get-Content -LiteralPath $modelMapPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($modelMap.schema_version -ne 1) { throw 'Unsupported MYGO model-map schema.' }
+if ([string]$modelMap.default_primary -ne 'CURRENT') {
+    throw 'MYGO requires default_primary=CURRENT. Reinstall or migrate the project workflow.'
+}
 $workerProperty = $modelMap.agents.psobject.Properties[$Worker]
 if ($null -eq $workerProperty) { throw "Worker is absent from the MYGO model map: $Worker" }
 $workerSpec = $workerProperty.Value
@@ -88,6 +93,34 @@ if ($workerProvider -eq 'deepseek' -and
 if ($workerProvider -eq 'deepseek' -and $DataSensitivity -eq 'LOCAL_ONLY') {
     throw 'DeepSeek routes transmit selected context to an external provider. Set DataSensitivity to APPROVED_EXTERNAL or PUBLIC only after confirming the data may be sent.'
 }
+$resolverPath = Join-Path $PSScriptRoot 'resolve-primary-profile.ps1'
+if (-not (Test-Path -LiteralPath $resolverPath -PathType Leaf)) {
+    throw "Primary-profile resolver is missing: $resolverPath"
+}
+$resolverArgs = @{ ProjectRoot = $ProjectRoot }
+if (-not [string]::IsNullOrWhiteSpace($ObservedPrimaryModel)) {
+    $resolverArgs.ObservedModel = $ObservedPrimaryModel
+}
+if (-not [string]::IsNullOrWhiteSpace($ObservedPrimaryEffort)) {
+    $resolverArgs.ObservedEffort = $ObservedPrimaryEffort
+}
+$resolutionOutput = @(& $resolverPath @resolverArgs)
+$resolution = @{}
+foreach ($line in $resolutionOutput) {
+    if ($line -match '^([A-Z_]+)=(.*)$') { $resolution[$matches[1]] = $matches[2] }
+}
+$resolvedPrimaryProfile = [string]$resolution.PRIMARY_PROFILE
+if ($resolvedPrimaryProfile -notin @('CURRENT', 'ASTRA', 'SOL')) {
+    throw 'Primary-profile resolver returned no supported current-session profile.'
+}
+if ($PrimaryProfile -ne 'AUTO' -and $PrimaryProfile -ne $resolvedPrimaryProfile) {
+    throw "Requested PrimaryProfile $PrimaryProfile does not match current-session profile $resolvedPrimaryProfile."
+}
+$PrimaryProfile = $resolvedPrimaryProfile
+$primaryModel = [string]$resolution.PRIMARY_MODEL
+$primaryEffort = [string]$resolution.PRIMARY_REASONING_EFFORT
+$primaryResolutionSource = [string]$resolution.PROFILE_RESOLUTION_SOURCE
+
 if ($Worker -eq 'astra_review_worker' -and $PrimaryProfile -ne 'SOL') {
     throw 'astra_review_worker is advisory only and requires PrimaryProfile SOL.'
 }
@@ -123,12 +156,12 @@ catch {
     throw 'Another task creation is already in progress for this project.'
 }
 
-$activeBindings = @(Get-ChildItem -LiteralPath $bindingDir -Filter '*.json' -File)
+$activeBindings = @(Get-ChildItem -LiteralPath $bindingDir -Filter 'rmo-*.json' -File)
 if ($activeBindings.Count -gt 0) {
     throw "An active or unreadable binding already exists. Finish it before creating another: $($activeBindings.FullName -join ', ')"
 }
-$orphanTasks = @(Get-ChildItem -LiteralPath $taskDir -Filter '*.md' -File)
-$orphanStates = @(Get-ChildItem -LiteralPath $stateDir -Filter '*.json' -File)
+$orphanTasks = @(Get-ChildItem -LiteralPath $taskDir -Filter 'rmo-*.md' -File)
+$orphanStates = @(Get-ChildItem -LiteralPath $stateDir -Filter 'rmo-*.json' -File)
 if ($orphanTasks.Count -gt 0 -or $orphanStates.Count -gt 0) {
     $orphans = @($orphanTasks.FullName) + @($orphanStates.FullName)
     throw "Orphan coordination artifacts exist without a binding; recover or archive them before creating another task: $($orphans -join ', ')"
@@ -276,6 +309,9 @@ Task label: $taskLabel
 Mode: $mode
 Data sensitivity: $DataSensitivity
 Primary profile: $PrimaryProfile
+Primary model: $primaryModel
+Primary reasoning effort: $primaryEffort
+Primary resolution source: $primaryResolutionSource
 Canonical root: $ProjectRoot
 Created: $created
 Previous failure task: $previous
@@ -333,7 +369,7 @@ try {
     $taskHash = (Get-FileHash -LiteralPath $taskTemp -Algorithm SHA256).Hash.ToLowerInvariant()
 
 $binding = [ordered]@{
-    protocol_version = 3
+    protocol_version = 4
     task_id = $taskId
     status = 'READY'
     worker_name = $Worker
@@ -342,6 +378,9 @@ $binding = [ordered]@{
     task_name = $spawnTaskName
     mode = $mode
     primary_profile = $PrimaryProfile
+    primary_model = $primaryModel
+    primary_reasoning_effort = $primaryEffort
+    primary_resolution_source = $primaryResolutionSource
     canonical_root = $ProjectRoot
     task_path = $taskPath
     task_sha256 = $taskHash
@@ -359,7 +398,7 @@ $binding = [ordered]@{
     )
 
 $state = [ordered]@{
-    protocol_version = 3
+    protocol_version = 4
     task_id = $taskId
     worker_name = $Worker
     state = 'DISPATCHED'
@@ -405,6 +444,9 @@ Write-Output "WORKER_CODENAME=$workerCodename"
 Write-Output "TASK_DISPLAY_NAME=$taskDisplayName"
 Write-Output "SPAWN_TASK_NAME=$spawnTaskName"
 Write-Output "PRIMARY_PROFILE=$PrimaryProfile"
+Write-Output "PRIMARY_MODEL=$primaryModel"
+Write-Output "PRIMARY_REASONING_EFFORT=$primaryEffort"
+Write-Output "PRIMARY_RESOLUTION_SOURCE=$primaryResolutionSource"
 Write-Output "EXPECTED_MINUTES=$ExpectedMinutes"
 Write-Output "FIRST_OBSERVATION_SECONDS=$FirstObservationSeconds"
 Write-Output 'SPAWN_MESSAGE_BEGIN'
@@ -415,6 +457,9 @@ Write-Output "Task path: $taskPath"
 Write-Output "Binding path: $bindingPath"
 Write-Output "Task SHA-256: $taskHash"
 Write-Output "Primary profile: $PrimaryProfile"
+Write-Output "Primary model: $primaryModel"
+Write-Output "Primary reasoning effort: $primaryEffort"
+Write-Output "Primary resolution source: $primaryResolutionSource"
 Write-Output "Worker codename: $workerCodename"
 Write-Output "Expected minutes: $ExpectedMinutes; first observation: $FirstObservationSeconds seconds."
 Write-Output 'Read task and binding together in the first tool call. All binding fields are present: do not read the descriptor or scan task directories. Begin work without a separate plan or acknowledgement.'

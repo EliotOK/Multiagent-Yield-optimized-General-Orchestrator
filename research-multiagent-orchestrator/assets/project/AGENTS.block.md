@@ -1,11 +1,14 @@
 <!-- research-multiagent-orchestrator:start -->
 ## Research multi-agent workflow
 
-At first MYGO use in a conversation, select one Astra or Sol primary. The selected
+The active composer model is the only MYGO primary. Resolve it before every
+delegation through `.codex/mygo-model-map.json` using the current composer model.
+A known model may receive an Astra or Sol alias; any readable unmapped model
+resolves to CURRENT. The resolved
 primary alone owns task interpretation, scientific assumptions, architecture,
 worker dispatch, acceptance criteria, final diff review, independent validation,
-and integration. Reuse the choice for the conversation; a skill does not silently
-switch the root model.
+and integration. Do not ask the user to select a second logical primary; stop before
+dispatch when the current model is unavailable or ambiguous.
 Resolve the primary model, reasoning effort, providers, and child codenames from
 `.codex/mygo-model-map.json`. Keep stable technical roles in bindings and use the
 generated semantic `task_name` for child threads, such as `anon_schema_audit`.
@@ -21,13 +24,13 @@ explicit quality-first escalations to `luna_max_worker`. Use
 `terra_readonly_fallback_worker` for read-only reconstruction and
 `terra_fallback_worker` only for bounded write recovery after a failure is diagnosed,
 the previous writer is stopped, and a new immutable task describes partial state.
-Use `astra_review_worker` only for a bounded read-only second opinion in a
+Use `astra_review_worker` only for a bounded read-only second opinion in a known
 Sol-primary session. Use `sol_review_worker` only for the corresponding second
-opinion in an Astra-primary session. Reviewers never write, dispatch, or accept.
+opinion in a known Astra-primary session. Reviewers never write, dispatch, or accept.
 Keep trivial work with the primary agent.
 
 Before delegation, create one unique immutable task and binding under `.codex/` and
-record `ASTRA` or `SOL` as its primary profile.
+record the resolved profile, model, reasoning effort, and resolution source.
 Use a no-history fork for custom agents. Run at most one delegated worker at a time,
 and never let DeepSeek and Luna write the same task concurrently. Do not
 delete bindings until the worker is completed and no process may still write.

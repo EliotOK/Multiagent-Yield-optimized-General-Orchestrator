@@ -28,33 +28,38 @@ try {
     $codex = Join-Path $root 'codex'
     New-Item -ItemType Directory -Path $project -Force | Out-Null
     & $install -ProjectRoot $project -CodexHome $codex -Apply | Out-Null
+    $primaryObservation = @{
+        ObservedPrimaryModel = 'gpt-5.6-sol'
+        ObservedPrimaryEffort = 'high'
+    }
+    [IO.File]::WriteAllText((Join-Path $project '.codex\tasks\README.md'), 'Task directory documentation.')
 
     Expect-Failure {
-        & $create -ProjectRoot $project -Worker luna_medium_worker `
+        & $create @primaryObservation -ProjectRoot $project -Worker luna_medium_worker `
             -Objective 'missing boundary'
     } 'AllowedFiles'
     Expect-Failure {
-        & $create -ProjectRoot $project -Worker luna_medium_worker `
+        & $create @primaryObservation -ProjectRoot $project -Worker luna_medium_worker `
             -Objective 'escape' -AllowedFiles '..\outside.txt' -ValidationCommands 'node --version'
     } 'outside the project root'
     Expect-Failure {
-        & $create -ProjectRoot $project -Worker terra_fallback_worker `
+        & $create @primaryObservation -ProjectRoot $project -Worker terra_fallback_worker `
             -Objective 'invalid fallback' -Mode READ_ONLY
     } 'write-capable fallback'
     Expect-Failure {
-        & $create -ProjectRoot $project -Worker deepseek_context_worker `
+        & $create @primaryObservation -ProjectRoot $project -Worker deepseek_context_worker `
             -Objective 'sensitive external route' -Mode READ_ONLY
     } 'external provider'
     Expect-Failure {
-        & $create -ProjectRoot $project -Worker astra_review_worker `
+        & $create @primaryObservation -ProjectRoot $project -Worker astra_review_worker `
             -Objective 'wrong primary reviewer' -PrimaryProfile ASTRA
-    } 'requires PrimaryProfile SOL'
+    } 'does not match current-session profile SOL'
     Expect-Failure {
-        & $create -ProjectRoot $project -Worker sol_review_worker `
+        & $create @primaryObservation -ProjectRoot $project -Worker sol_review_worker `
             -Objective 'wrong primary reviewer' -PrimaryProfile SOL
     } 'requires PrimaryProfile ASTRA'
 
-    $taskOutput = & $create -ProjectRoot $project -Worker luna_medium_worker `
+    $taskOutput = & $create @primaryObservation -ProjectRoot $project -Worker luna_medium_worker `
         -Objective "Heading text is quoted`n## not a control section" `
         -AllowedFiles 'outputs/result.txt' -ValidationCommands 'node --version'
     $taskId = (($taskOutput | Where-Object { $_ -like 'TASK_ID=*' }) -replace '^TASK_ID=', '')
@@ -95,14 +100,14 @@ try {
     } 'JSON|Unexpected character|invalid'
     [IO.File]::WriteAllText($archivedStatePath, $archivedStateOriginal)
 
-    $failedOutput = & $create -ProjectRoot $project -Worker luna_medium_worker `
+    $failedOutput = & $create @primaryObservation -ProjectRoot $project -Worker luna_medium_worker `
         -Objective 'produce fallback evidence' -AllowedFiles 'outputs/failed.txt' `
         -ValidationCommands 'node --version'
     $failedId = (($failedOutput | Where-Object { $_ -like 'TASK_ID=*' }) -replace '^TASK_ID=', '')
     & $update -ProjectRoot $project -TaskId $failedId -NewState FAILED | Out-Null
     & $close -ProjectRoot $project -TaskId $failedId -Outcome FAILED `
         -ConfirmWorkerStopped -Apply | Out-Null
-    $fallbackOutput = & $create -ProjectRoot $project `
+    $fallbackOutput = & $create @primaryObservation -ProjectRoot $project `
         -Worker terra_readonly_fallback_worker -Objective 'read-only reconstruction' `
         -PreviousFailureTaskId $failedId
     $fallbackId = (($fallbackOutput | Where-Object { $_ -like 'TASK_ID=*' }) -replace '^TASK_ID=', '')
@@ -121,7 +126,7 @@ try {
     & $close -ProjectRoot $project -TaskId $fallbackId -Outcome INTERRUPTED `
         -ConfirmWorkerStopped -Apply | Out-Null
 
-    $tamperOutput = & $create -ProjectRoot $project -Worker luna_medium_worker `
+    $tamperOutput = & $create @primaryObservation -ProjectRoot $project -Worker luna_medium_worker `
         -Objective 'tamper detection' -AllowedFiles 'outputs/tamper.txt' `
         -ValidationCommands 'node --version'
     $tamperId = (($tamperOutput | Where-Object { $_ -like 'TASK_ID=*' }) -replace '^TASK_ID=', '')
@@ -137,9 +142,9 @@ try {
 
     $descriptorPath = Join-Path $project '.codex\research-multiagent.toml'
     $descriptorOriginal = Get-Content -LiteralPath $descriptorPath -Raw
-    [IO.File]::WriteAllText($descriptorPath, ($descriptorOriginal -replace 'protocol_version = 3', 'protocol_version = 999'))
+    [IO.File]::WriteAllText($descriptorPath, ($descriptorOriginal -replace 'protocol_version = 4', 'protocol_version = 999'))
     Expect-Failure {
-        & $create -ProjectRoot $project -Worker deepseek_context_worker `
+        & $create @primaryObservation -ProjectRoot $project -Worker deepseek_context_worker `
             -Objective 'descriptor tamper' -Mode READ_ONLY -DataSensitivity PUBLIC
     } 'protocol version'
     [IO.File]::WriteAllText($descriptorPath, $descriptorOriginal)
@@ -152,7 +157,8 @@ try {
         param($CreateScript, $Project)
         $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $CreateScript `
             -ProjectRoot $Project -Worker luna_medium_worker -Objective concurrent `
-            -AllowedFiles outputs/result.txt -ValidationCommands 'node --version'
+            -AllowedFiles outputs/result.txt -ValidationCommands 'node --version' `
+            -ObservedPrimaryModel gpt-5.6-sol -ObservedPrimaryEffort high
         [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = @($output) }
     }
     $jobs = @(Start-Job -ScriptBlock $jobScript -ArgumentList $create, $concurrentProject
@@ -172,9 +178,9 @@ try {
     $orphanCodex = Join-Path $root 'orphan-codex'
     New-Item -ItemType Directory -Path $orphanProject -Force | Out-Null
     & $install -ProjectRoot $orphanProject -CodexHome $orphanCodex -LunaOnly -Apply | Out-Null
-    [IO.File]::WriteAllText((Join-Path $orphanProject '.codex\tasks\orphan.md'), 'crash remnant')
+    [IO.File]::WriteAllText((Join-Path $orphanProject '.codex\tasks\rmo-crash-remnant.md'), 'crash remnant')
     Expect-Failure {
-        & $create -ProjectRoot $orphanProject -Worker luna_medium_worker `
+        & $create @primaryObservation -ProjectRoot $orphanProject -Worker luna_medium_worker `
             -Objective 'must not bypass orphan' -AllowedFiles 'outputs/result.txt' `
             -ValidationCommands 'node --version'
     } 'Orphan coordination artifacts'

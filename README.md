@@ -4,8 +4,9 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Windows-first Codex skill for scientific coding projects. On first use in a
-conversation, MYGO asks the user to choose an Astra primary or Sol primary, then
+Windows-first Codex skill for scientific coding projects. Before each delegation,
+MYGO uses the active composer model as the sole primary. Known models receive an
+Astra or Sol alias; new or unmapped models use the neutral `CURRENT` profile, then
 routes bounded work across DeepSeek V4.1 Flash (`deepseek-flash`) long-context
 workers and tiered Luna coding workers.
 
@@ -17,7 +18,7 @@ The distributable Codex skill keeps the descriptive internal name
 
 ## What it does
 
-Exactly one selected primary retains task interpretation, scientific decisions,
+Exactly one current-session primary retains task interpretation, scientific decisions,
 architecture, worker dispatch, acceptance criteria, final review, and validation
 for the conversation. The other flagship model can only provide a bounded,
 read-only second opinion; it is never a second controller.
@@ -26,6 +27,7 @@ read-only second opinion; it is never a second controller.
 | --- | --- |
 | Astra primary | `sol_review_worker` for a high-risk or explicit second opinion |
 | Sol primary | `astra_review_worker`, medium reasoning and one pass by default |
+| Any other current model | No profile-specific cross-review by default |
 
 The primary routes bounded work as follows:
 
@@ -80,9 +82,10 @@ re-enable DeepSeek. If global Codex changes are not authorized, also pass
 AGENTS.md. ProjectOnly changes installation scope only: preserve full DeepSeek
 routing when all compatible user-level agents, provider configuration, and the key
 already exist; otherwise stop before writing. LunaOnly disables DeepSeek and keeps
-long-context work with the selected primary agent. On the first MYGO task, ask me
-to choose Astra primary or Sol primary; do not claim that the skill can silently
-change the current task's root model. Reserve Terra for diagnosed sequential
+long-context work with the current primary agent. Before delegation, resolve the
+active composer model through the project model map; do not ask me to choose a
+second logical primary and do not claim that the skill can change the current
+task's root model. Reserve Terra for diagnosed sequential
 fallback. Tell me when a full Codex Desktop restart is required.
 ```
 
@@ -142,8 +145,8 @@ In Codex, start a task with:
 
 ```text
 Use $research-multiagent-orchestrator for this scientific coding task.
-If this is its first use in the conversation, let me choose Astra primary or Sol
-primary. Keep scientific interpretation and final review with that one primary.
+Resolve the active composer model as the MYGO primary before delegation. Keep
+scientific interpretation and final review with that current-session primary.
 Route only work that can amortize worker startup, and review every worker diff.
 ```
 
@@ -152,9 +155,9 @@ See [examples](examples) for scientific-task prompts and expected routing.
 ### Change models without changing the topology
 
 MYGO creates `.codex/mygo-model-map.json`. Its shipped primary settings are
-`default_primary = ASK`, Astra at `gpt-6-astra / medium`, and Sol at
-`gpt-5.6-sol / high`. `ASK` means there is no silent default primary: MYGO asks once
-per conversation.
+`default_primary = CURRENT`, Astra at `gpt-6-astra / medium`, and Sol at
+`gpt-5.6-sol / high`. `CURRENT` means the active composer model is authoritative;
+MYGO re-resolves it before every delegation and does not ask for a second primary.
 
 Every worker has a stable technical role plus a human-facing codename inspired by
 MyGO!!!!! and Ave Mujica. Codenames label child threads only; they do not inject a
@@ -190,7 +193,7 @@ topology still requires a versioned skill migration.
 - Treat raw data as immutable.
 - Do not silently alter rows, units, CRS, missingness, taxonomy, or assumptions.
 - Run only one delegated worker at a time. The task protocol is deliberately serial.
-- Cross-reviewers are read-only and advisory; only the selected primary can
+- Cross-reviewers are read-only and advisory; only the resolved current primary can
   dispatch write work, integrate changes, or accept a result.
 - Use immutable task and binding records for every delegation.
 - Archive coordination evidence after review; do not delete it while a worker might

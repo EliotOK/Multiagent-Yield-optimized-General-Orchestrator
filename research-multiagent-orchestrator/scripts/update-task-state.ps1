@@ -60,7 +60,7 @@ $binding = Get-Content -LiteralPath $bindingPath -Raw -Encoding UTF8 | ConvertFr
 $state = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($binding.task_id -ne $TaskId -or $state.task_id -ne $TaskId) { throw 'Task ID mismatch.' }
 if ($binding.worker_name -ne $state.worker_name) { throw 'Worker identity mismatch.' }
-if ($binding.protocol_version -ne 3 -or $state.protocol_version -ne 3) { throw 'Protocol version mismatch.' }
+if ($binding.protocol_version -ne 4 -or $state.protocol_version -ne 4) { throw 'Protocol version mismatch.' }
 if ($binding.status -ne 'READY') { throw "Binding is not READY: $($binding.status)" }
 if ([IO.Path]::GetFullPath([string]$binding.canonical_root).TrimEnd('\') -ne $ProjectRoot) {
     throw 'Binding canonical root mismatch.'

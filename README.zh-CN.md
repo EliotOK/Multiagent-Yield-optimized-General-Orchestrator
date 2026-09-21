@@ -4,8 +4,9 @@
 
 简体中文 | [English](README.md)
 
-MYGO 是一个面向科研编程项目、优先支持 Windows 的 Codex skill。每次会话首次
-调用时，它会让用户选择 Astra primary 或 Sol primary；随后把长上下文任务交给
+MYGO 是一个面向科研编程项目、优先支持 Windows 的 Codex skill。每次委派前，
+它把当前会话模型作为唯一主控；已知模型可获得 Astra 或 Sol 别名，新模型或未登记模型
+使用中性的 `CURRENT` profile。随后把长上下文任务交给
 DeepSeek V4.1 Flash（正式模型 ID：`deepseek-flash`），并按难度把收敛的编码任务
 交给 Luna medium、high 或 max。
 
@@ -17,7 +18,7 @@ DeepSeek V4.1 Flash（正式模型 ID：`deepseek-flash`），并按难度把收
 
 ## 工作方式
 
-每个会话只允许一个选定的主 Agent，独占任务理解、科研判断、架构、worker 派发、
+当前会话模型是唯一主 Agent，独占任务理解、科研判断、架构、worker 派发、
 验收标准、最终代码审核和独立验证权。另一旗舰模型只能做有限的只读交叉复核，
 不能成为第二控制器。
 
@@ -25,6 +26,7 @@ DeepSeek V4.1 Flash（正式模型 ID：`deepseek-flash`），并按难度把收
 | --- | --- |
 | Astra primary | `sol_review_worker`，仅用于高风险或用户明确要求的第二意见 |
 | Sol primary | `astra_review_worker`，默认 medium reasoning、单轮、只读 |
+| 其他当前会话模型 | 默认不启用特定 profile 的交叉复核 |
 
 其余工作默认按下表路由：
 
@@ -78,8 +80,8 @@ verify-workflow.ps1 中都使用 -LunaOnly，不要要求我重新启用 DeepSee
 ~/.codex/config.toml、~/.codex/agents 或全局 AGENTS.md。ProjectOnly 只改变安装
 范围：若用户级 DeepSeek provider、全部兼容 agents 和 key 已存在，保留完整
 DeepSeek 路由；否则写入前停止。LunaOnly 才会禁用 DeepSeek，并由主 Agent承担
-长上下文任务。首次调用 MYGO 时让我选择 Astra primary 或 Sol primary；不要声称
-skill 能静默切换当前任务的 root model。Terra 仅在失败已确认后顺序接替。最后告诉我是否需要彻底重启
+长上下文任务。每次委派前根据项目 model map 解析当前会话模型；不要让我再选择
+一个逻辑主控，也不要声称 skill 能切换当前任务的 root model。Terra 仅在失败已确认后顺序接替。最后告诉我是否需要彻底重启
 Codex Desktop。
 ```
 
@@ -145,8 +147,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 ```text
 请使用 $research-multiagent-orchestrator 处理这个科研编程任务。
-如果这是本会话第一次调用，请让我选择 Astra primary 或 Sol primary。科研解释、
-派发、整合和最终审核只能由选定的一个主 Agent负责；仅派发能够覆盖 worker 启动成本的工作；
+委派前将当前会话模型解析为 MYGO 主控。科研解释、派发、整合和最终审核只能由
+这个当前会话主 Agent负责；仅派发能够覆盖 worker 启动成本的工作；
 主 Agent必须审核全部 worker diff 并独立运行适当验证。
 ```
 
@@ -155,8 +157,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 ### 不改变拓扑，快速更换模型
 
 MYGO 会创建 `.codex/mygo-model-map.json`。随附默认值为
-`default_primary = ASK`、Astra 使用 `gpt-6-astra / medium`、Sol 使用
-`gpt-5.6-sol / high`。`ASK` 表示不存在静默默认主控：每次会话首次调用时询问一次。
+`default_primary = CURRENT`、Astra 使用 `gpt-6-astra / medium`、Sol 使用
+`gpt-5.6-sol / high`。`CURRENT` 表示以当前会话模型为准；MYGO 每次委派前重新解析，
+不会再要求用户选择第二个主控。
 
 每个 worker 都保留稳定的技术角色，同时拥有一个来自 MyGO!!!!! 或 Ave Mujica 的
 显示代号。代号只用于子任务线程名称，不会把角色人格注入科研判断。修改 map 中的

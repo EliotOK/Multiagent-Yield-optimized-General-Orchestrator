@@ -19,6 +19,7 @@ foreach ($relative in @(
     'SKILL.md', 'agents\openai.yaml', 'scripts\install-workflow.ps1',
     'scripts\set-deepseek-key.ps1',
     'scripts\configure-model-map.ps1',
+    'scripts\resolve-primary-profile.ps1',
     'scripts\update-task-state.ps1',
     'scripts\create-task.ps1', 'scripts\close-task.ps1',
     'references\primary-profiles.md', 'references\model-map.md',

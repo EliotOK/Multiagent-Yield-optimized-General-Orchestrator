@@ -34,10 +34,10 @@ if (Test-Path -LiteralPath $descriptor) {
     $descriptorText = Get-Content -LiteralPath $descriptor -Raw -Encoding UTF8
     $rootToml = $ProjectRoot.Replace('\', '/')
     Add-Check 'descriptor_root_matches' ($descriptorText -match ('canonical_root\s*=\s*"' + [regex]::Escape($rootToml) + '"')) $rootToml
-    Add-Check 'descriptor_protocol' ($descriptorText -match '(?m)^protocol_version\s*=\s*3\s*$') 'protocol_version=3'
+    Add-Check 'descriptor_protocol' ($descriptorText -match '(?m)^protocol_version\s*=\s*4\s*$') 'protocol_version=4'
     Add-Check 'descriptor_primary_profile_mode' `
-        ($descriptorText -match '(?m)^primary_profile_mode\s*=\s*"session-choice"\s*$') `
-        'primary_profile_mode=session-choice'
+        ($descriptorText -match '(?m)^primary_profile_mode\s*=\s*"current-session"\s*$') `
+        'primary_profile_mode=current-session'
     Add-Check 'descriptor_model_map_schema' `
         ($descriptorText -match '(?m)^model_map_schema\s*=\s*1\s*$') `
         'model_map_schema=1'
@@ -68,7 +68,7 @@ if (-not [string]::IsNullOrWhiteSpace($TaskId)) {
     Add-Check 'requested_binding' (Test-Path -LiteralPath $bindingPath -PathType Leaf) $bindingPath
     if (Test-Path -LiteralPath $bindingPath) {
         $binding = Get-Content -LiteralPath $bindingPath -Raw | ConvertFrom-Json
-        Add-Check 'binding_protocol' ($binding.protocol_version -eq 3) ([string]$binding.protocol_version)
+        Add-Check 'binding_protocol' ($binding.protocol_version -eq 4) ([string]$binding.protocol_version)
         Add-Check 'binding_task_id' ($binding.task_id -eq $TaskId) ([string]$binding.task_id)
         Add-Check 'binding_status' ($binding.status -eq 'READY') ([string]$binding.status)
         Add-Check 'binding_worker' (-not [string]::IsNullOrWhiteSpace([string]$binding.worker_name)) ([string]$binding.worker_name)
@@ -77,7 +77,7 @@ if (-not [string]::IsNullOrWhiteSpace($TaskId)) {
             ([string]$binding.worker_codename)
         Add-Check 'binding_mode' ($binding.mode -in @('READ_ONLY', 'WORKSPACE_WRITE')) ([string]$binding.mode)
         Add-Check 'binding_primary_profile' `
-            ($binding.primary_profile -in @('ASTRA', 'SOL', 'UNSPECIFIED')) `
+            ($binding.primary_profile -in @('CURRENT', 'ASTRA', 'SOL', 'UNSPECIFIED')) `
             ([string]$binding.primary_profile)
         if ($binding.worker_name -eq 'astra_review_worker') {
             Add-Check 'reviewer_primary_match' `
@@ -109,7 +109,7 @@ if (-not [string]::IsNullOrWhiteSpace($TaskId)) {
         if ($stateExists) {
             try {
                 $state = Get-Content -LiteralPath $expectedStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-                Add-Check 'state_protocol' ($state.protocol_version -eq 3) ([string]$state.protocol_version)
+                Add-Check 'state_protocol' ($state.protocol_version -eq 4) ([string]$state.protocol_version)
                 Add-Check 'state_task_id' ($state.task_id -eq $TaskId) ([string]$state.task_id)
                 Add-Check 'state_worker' ($state.worker_name -eq $binding.worker_name) ([string]$state.worker_name)
                 Add-Check 'state_value' ($state.state -in @('DISPATCHED', 'AGENT_CREATED',

@@ -1,4 +1,4 @@
 interface:
   display_name: "MYGO — Multi-Agent Orchestrator"
-  short_description: "Configurable Astra/Sol scientific multi-agent workflow"
-  default_prompt: "Use $research-multiagent-orchestrator. Resolve the project model map, ask me to choose Astra or Sol when default_primary is ASK, then route and supervise the scientific coding task with one final authority."
+  short_description: "Current-model scientific multi-agent workflow with configurable workers"
+  default_prompt: "Use $research-multiagent-orchestrator. Resolve the active composer model through the project model map, then route and supervise the scientific coding task with that current model as the sole final authority."
