@@ -37,10 +37,14 @@ function Get-TomlLexedValues([string]$Text, [string]$Table, [string]$Key, [bool]
         if (-not $inBasicMultiline -and ([regex]::Matches($line, "'''").Count % 2 -eq 1)) {
             $inLiteralMultiline = -not $inLiteralMultiline
         }
-        if (-not $wasInMultiline -and -not $inBasicMultiline -and -not $inLiteralMultiline -and
-            $line -match '^\s*\[([^\]]+)\]\s*(?:#.*)?$') {
-            $currentTable = $matches[1].Trim()
-            continue
+        if (-not $wasInMultiline -and -not $inBasicMultiline -and -not $inLiteralMultiline) {
+            $tableMatch = [regex]::Match($line, '^\s*(?:\[\[([^\]]+)\]\]|\[([^\]]+)\])\s*(?:#.*)?$')
+            if ($tableMatch.Success) {
+                $currentTable = if ($tableMatch.Groups[1].Success) {
+                    $tableMatch.Groups[1].Value.Trim()
+                } else { $tableMatch.Groups[2].Value.Trim() }
+                continue
+            }
         }
         if (-not $wasInMultiline -and -not $inBasicMultiline -and -not $inLiteralMultiline -and
             ($AnyTable -or $currentTable -eq $Table) -and
@@ -78,8 +82,42 @@ if (Test-Path -LiteralPath $config -PathType Leaf) {
     }
 }
 
+$modelMapPath = Join-Path $ProjectRoot '.codex\mygo-model-map.json'
+$modelMap = $null
+$agentModelSpecs = [ordered]@{}
+Add-Check 'model_map' $(if (Test-Path -LiteralPath $modelMapPath -PathType Leaf) { 'PASS' } else { 'FAIL' }) $modelMapPath
+if (Test-Path -LiteralPath $modelMapPath -PathType Leaf) {
+    try {
+        $modelMap = Get-Content -LiteralPath $modelMapPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        Add-Check 'model_map_schema' $(if ($modelMap.schema_version -eq 1) { 'PASS' } else { 'FAIL' }) ([string]$modelMap.schema_version)
+        Add-Check 'default_primary' `
+            $(if ($modelMap.default_primary -in @('ASK', 'ASTRA', 'SOL')) { 'PASS' } else { 'FAIL' }) `
+            ([string]$modelMap.default_primary)
+        Add-Check 'primary_astra' `
+            $(if ($modelMap.primary_profiles.ASTRA.model -match '^[A-Za-z0-9._:/-]+$' -and
+                $modelMap.primary_profiles.ASTRA.reasoning_effort -in @('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')) { 'PASS' } else { 'FAIL' }) `
+            "$($modelMap.primary_profiles.ASTRA.model)/$($modelMap.primary_profiles.ASTRA.reasoning_effort)"
+        Add-Check 'primary_sol' `
+            $(if ($modelMap.primary_profiles.SOL.model -match '^[A-Za-z0-9._:/-]+$' -and
+                $modelMap.primary_profiles.SOL.reasoning_effort -in @('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')) { 'PASS' } else { 'FAIL' }) `
+            "$($modelMap.primary_profiles.SOL.model)/$($modelMap.primary_profiles.SOL.reasoning_effort)"
+        foreach ($property in $modelMap.agents.psobject.Properties) {
+            if ($LunaOnly -and $property.Name -like 'deepseek_*') { continue }
+            $spec = $property.Value
+            $agentModelSpecs[[string]$spec.file] = @(
+                [string]$spec.model, [string]$spec.reasoning_effort,
+                [string]$spec.provider, [string]$spec.codename
+            )
+        }
+    }
+    catch {
+        Add-Check 'model_map_parse' 'FAIL' $_.Exception.Message
+    }
+}
+
 $agentNames = @('luna-medium-worker.toml', 'luna-high-worker.toml', 'luna-max-worker.toml',
-    'terra-readonly-fallback-worker.toml', 'terra-fallback-worker.toml')
+    'terra-readonly-fallback-worker.toml', 'terra-fallback-worker.toml',
+    'astra-review-worker.toml', 'sol-review-worker.toml')
 if (-not $LunaOnly) {
     $agentNames = @('deepseek-context-worker.toml', 'deepseek-context-reasoning-worker.toml',
         'deepseek-batch-worker.toml') + $agentNames
@@ -93,30 +131,22 @@ foreach ($name in $agentNames) {
         Add-Check "agent_name:$name" `
             $(if ((Get-TomlScalar $agentText 'name') -eq $expectedName) { 'PASS' } else { 'FAIL' }) $expectedName
         $expectedSandbox = if ($name -like 'deepseek-context*' -or
-            $name -eq 'terra-readonly-fallback-worker.toml') { 'read-only' } else { 'workspace-write' }
+            $name -eq 'terra-readonly-fallback-worker.toml' -or
+            $name -in @('astra-review-worker.toml', 'sol-review-worker.toml')) { 'read-only' } else { 'workspace-write' }
         Add-Check "agent_sandbox:$name" `
             $(if ((Get-TomlScalar $agentText 'sandbox_mode') -eq $expectedSandbox) { 'PASS' } else { 'FAIL' }) $expectedSandbox
-        if ($name -like 'deepseek-*') {
-            Add-Check "agent_provider:$name" `
-                $(if ((Get-TomlScalar $agentText 'model_provider') -eq 'deepseek') { 'PASS' } else { 'FAIL' }) 'deepseek'
-            Add-Check "agent_model:$name" `
-                $(if ((Get-TomlScalar $agentText 'model') -eq 'deepseek-v4-flash') { 'PASS' } else { 'FAIL' }) 'deepseek-v4-flash'
+        if ($agentModelSpecs.Contains($name)) {
+            $expectedProvider = $agentModelSpecs[$name][2]
+            $actualProvider = Get-TomlScalar $agentText 'model_provider'
+            $providerOk = if ($expectedProvider -eq 'default') {
+                [string]::IsNullOrWhiteSpace([string]$actualProvider)
+            } else { $actualProvider -eq $expectedProvider }
+            Add-Check "agent_provider:$name" $(if ($providerOk) { 'PASS' } else { 'FAIL' }) $expectedProvider
         }
     }
 }
 
-$agentModelSpecs = [ordered]@{
-    'deepseek-context-worker.toml' = @('deepseek-v4-flash', 'low')
-    'deepseek-context-reasoning-worker.toml' = @('deepseek-v4-flash', 'high')
-    'deepseek-batch-worker.toml' = @('deepseek-v4-flash', 'high')
-    'luna-medium-worker.toml' = @('gpt-5.6-luna', 'medium')
-    'luna-high-worker.toml' = @('gpt-5.6-luna', 'high')
-    'luna-max-worker.toml' = @('gpt-5.6-luna', 'max')
-    'terra-readonly-fallback-worker.toml' = @('gpt-5.6-terra', 'high')
-    'terra-fallback-worker.toml' = @('gpt-5.6-terra', 'high')
-}
 foreach ($entry in $agentModelSpecs.GetEnumerator()) {
-    if ($LunaOnly -and $entry.Key -like 'deepseek-*') { continue }
     $path = Join-Path (Join-Path $CodexHome 'agents') $entry.Key
     $agentText = if (Test-Path -LiteralPath $path -PathType Leaf) {
         Get-Content -LiteralPath $path -Raw -Encoding UTF8
@@ -125,6 +155,8 @@ foreach ($entry in $agentModelSpecs.GetEnumerator()) {
         $(if ((Get-TomlScalar $agentText 'model') -eq $entry.Value[0]) { 'PASS' } else { 'FAIL' }) $entry.Value[0]
     Add-Check "agent_effort:$($entry.Key)" `
         $(if ((Get-TomlScalar $agentText 'model_reasoning_effort') -eq $entry.Value[1]) { 'PASS' } else { 'FAIL' }) $entry.Value[1]
+    Add-Check "agent_codename:$($entry.Key)" `
+        $(if ($entry.Value[3] -match '^[A-Za-z][A-Za-z0-9_-]{0,31}$') { 'PASS' } else { 'FAIL' }) $entry.Value[3]
     Add-Check "agent_instructions:$($entry.Key)" `
         $(if ($agentText -match '(?m)^developer_instructions\s*=\s*"""') { 'PASS' } else { 'FAIL' }) 'developer_instructions present'
 }
@@ -150,6 +182,16 @@ if (Test-Path -LiteralPath $descriptor -PathType Leaf) {
     Add-Check 'protocol_version' `
         $(if ($descriptorText -match '(?m)^protocol_version\s*=\s*3\s*$') { 'PASS' } else { 'FAIL' }) `
         'protocol_version=3'
+    Add-Check 'primary_profile_mode' `
+        $(if ($descriptorText -match '(?m)^primary_profile_mode\s*=\s*"session-choice"\s*$') { 'PASS' } else { 'FAIL' }) `
+        'primary_profile_mode=session-choice'
+    Add-Check 'descriptor_model_map_schema' `
+        $(if ($descriptorText -match '(?m)^model_map_schema\s*=\s*1\s*$') { 'PASS' } else { 'FAIL' }) `
+        'model_map_schema=1'
+    $modelMapToml = $modelMapPath.Replace('\', '/')
+    Add-Check 'descriptor_model_map' `
+        $(if ($descriptorText -match ('(?m)^model_map\s*=\s*"' + [regex]::Escape($modelMapToml) + '"\s*$')) { 'PASS' } else { 'FAIL' }) `
+        $modelMapToml
     $expectedDeepSeek = if ($LunaOnly) { 'false' } else { 'true' }
     Add-Check 'deepseek_mode' `
         $(if ($descriptorText -match "(?m)^deepseek_enabled\s*=\s*$expectedDeepSeek\s*$") { 'PASS' } else { 'FAIL' }) `

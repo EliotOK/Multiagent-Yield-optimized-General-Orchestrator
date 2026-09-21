@@ -4,9 +4,10 @@
 
 简体中文 | [English](README.md)
 
-MYGO 是一个面向科研编程项目、优先支持 Windows 的 Codex skill。它由 Codex
-主 Agent 负责规划和审核，将长上下文任务交给 DeepSeek V4 Flash，并按难度将
-收敛的编码任务交给 Luna medium、high 或 max。
+MYGO 是一个面向科研编程项目、优先支持 Windows 的 Codex skill。每次会话首次
+调用时，它会让用户选择 Astra primary 或 Sol primary；随后把长上下文任务交给
+DeepSeek V4.1 Flash（正式模型 ID：`deepseek-flash`），并按难度把收敛的编码任务
+交给 Luna medium、high 或 max。
 
 发布用 skill 保留内部名称 `research-multiagent-orchestrator`，以便 Codex 能够
 明确识别它的用途和触发条件。
@@ -16,8 +17,16 @@ MYGO 是一个面向科研编程项目、优先支持 Windows 的 Codex skill。
 
 ## 工作方式
 
-Codex 主 Agent 始终负责任务理解、科研判断、架构、验收标准、最终代码审核和
-独立验证。其余工作默认按下表路由：
+每个会话只允许一个选定的主 Agent，独占任务理解、科研判断、架构、worker 派发、
+验收标准、最终代码审核和独立验证权。另一旗舰模型只能做有限的只读交叉复核，
+不能成为第二控制器。
+
+| 主控配置 | 可选交叉复核 |
+| --- | --- |
+| Astra primary | `sol_review_worker`，仅用于高风险或用户明确要求的第二意见 |
+| Sol primary | `astra_review_worker`，默认 medium reasoning、单轮、只读 |
+
+其余工作默认按下表路由：
 
 | 任务类型 | 默认执行者 |
 | --- | --- |
@@ -69,7 +78,8 @@ verify-workflow.ps1 中都使用 -LunaOnly，不要要求我重新启用 DeepSee
 ~/.codex/config.toml、~/.codex/agents 或全局 AGENTS.md。ProjectOnly 只改变安装
 范围：若用户级 DeepSeek provider、全部兼容 agents 和 key 已存在，保留完整
 DeepSeek 路由；否则写入前停止。LunaOnly 才会禁用 DeepSeek，并由主 Agent承担
-长上下文任务。Terra 仅在失败已确认后顺序接替。最后告诉我是否需要彻底重启
+长上下文任务。首次调用 MYGO 时让我选择 Astra primary 或 Sol primary；不要声称
+skill 能静默切换当前任务的 root model。Terra 仅在失败已确认后顺序接替。最后告诉我是否需要彻底重启
 Codex Desktop。
 ```
 
@@ -135,11 +145,38 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 ```text
 请使用 $research-multiagent-orchestrator 处理这个科研编程任务。
-科研解释和最终审核由主 Agent负责；仅派发能够覆盖 worker 启动成本的工作；
+如果这是本会话第一次调用，请让我选择 Astra primary 或 Sol primary。科研解释、
+派发、整合和最终审核只能由选定的一个主 Agent负责；仅派发能够覆盖 worker 启动成本的工作；
 主 Agent必须审核全部 worker diff 并独立运行适当验证。
 ```
 
 更多示例见 [examples](examples)。
+
+### 不改变拓扑，快速更换模型
+
+MYGO 会创建 `.codex/mygo-model-map.json`。随附默认值为
+`default_primary = ASK`、Astra 使用 `gpt-6-astra / medium`、Sol 使用
+`gpt-5.6-sol / high`。`ASK` 表示不存在静默默认主控：每次会话首次调用时询问一次。
+
+每个 worker 都保留稳定的技术角色，同时拥有一个来自 MyGO!!!!! 或 Ave Mujica 的
+显示代号。代号只用于子任务线程名称，不会把角色人格注入科研判断。修改 map 中的
+model、provider、reasoning effort 或 codename 后，先预览再应用：
+
+子任务名称由“角色代号 + 简短任务描述”组成，例如用户可读形式
+`Anon — schema audit`，Codex 派发接口中为 `anon_schema_audit`。随机后缀只保留在
+不可变审计 ID 中，不再作为子任务显示名；同一会话出现重复描述时，使用
+`anon_schema_audit_2` 这样的可读序号。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  <SKILL_PATH>\scripts\configure-model-map.ps1 -ProjectRoot "D:\path\to\project"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  <SKILL_PATH>\scripts\configure-model-map.ps1 -ProjectRoot "D:\path\to\project" -Apply
+```
+
+随后彻底重启 Codex 并运行 `verify-workflow.ps1`。map 不保存 API key。稳定角色键和
+文件名属于协议标识；改变节点数量或职责仍需进行版本化的 skill 迁移。
 
 ## 科研安全原则
 
@@ -151,6 +188,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 - 原始数据视为不可变；
 - 不得静默改变行数、单位、CRS、缺失值、分类学映射或分析假设；
 - 同时只运行一个 delegated worker；该协议有意采用严格串行；
+- 交叉复核 agent 只读且仅提供建议；只有选定的主 Agent可以派发写任务、整合和验收；
 - 每次委派使用不可变 task 和 binding；
 - worker 可能仍在写入时不得删除协调证据。
 
@@ -161,6 +199,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
   可以恢复任务，但会增加启动延迟；
 - Luna 首次启动耗时可能波动，普通任务优先使用 medium，只有明确需要更高推理
   密度时才使用 high 或 max；
+- skill 无法切换现有会话的 root model。若所选配置与当前 composer 模型不同，应
+  先切换模型或新建匹配任务。Astra 交叉复核默认使用 medium reasoning 且只运行一轮，
+  以控制额度消耗；
 - 独立的临时“暖机”worker 通常不能预热后续的新 worker 会话。同线程复用仍是
   实验功能，只有 A/B 测试证明有效后才会默认启用。
 

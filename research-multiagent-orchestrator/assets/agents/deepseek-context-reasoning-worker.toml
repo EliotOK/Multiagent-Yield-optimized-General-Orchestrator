@@ -1,7 +1,7 @@
 name = "deepseek_context_reasoning_worker"
 description = "Read-only high-reasoning long-context worker for R pipeline tracing, data lineage, cross-file schema and variable audits, and complex log diagnosis."
 model_provider = "deepseek"
-model = "deepseek-v4-flash"
+model = "deepseek-flash"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """

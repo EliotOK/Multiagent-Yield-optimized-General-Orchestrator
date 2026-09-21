@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "default_primary": "ASK",
+  "primary_profiles": {
+    "ASTRA": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "medium"
+    },
+    "SOL": {
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high"
+    }
+  },
+  "agents": {
+    "deepseek_context_worker": {
+      "file": "deepseek-context-worker.toml",
+      "codename": "Soyo",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "reasoning_effort": "low"
+    },
+    "deepseek_context_reasoning_worker": {
+      "file": "deepseek-context-reasoning-worker.toml",
+      "codename": "Mutsumi",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "reasoning_effort": "high"
+    },
+    "deepseek_batch_worker": {
+      "file": "deepseek-batch-worker.toml",
+      "codename": "Taki",
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "reasoning_effort": "high"
+    },
+    "luna_medium_worker": {
+      "file": "luna-medium-worker.toml",
+      "codename": "Anon",
+      "provider": "default",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "medium"
+    },
+    "luna_high_worker": {
+      "file": "luna-high-worker.toml",
+      "codename": "Rana",
+      "provider": "default",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "high"
+    },
+    "luna_max_worker": {
+      "file": "luna-max-worker.toml",
+      "codename": "Oblivionis",
+      "provider": "default",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "max"
+    },
+    "terra_readonly_fallback_worker": {
+      "file": "terra-readonly-fallback-worker.toml",
+      "codename": "Mortis",
+      "provider": "default",
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    },
+    "terra_fallback_worker": {
+      "file": "terra-fallback-worker.toml",
+      "codename": "Timoris",
+      "provider": "default",
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    },
+    "astra_review_worker": {
+      "file": "astra-review-worker.toml",
+      "codename": "Sakiko",
+      "provider": "default",
+      "model": "gpt-6-astra",
+      "reasoning_effort": "medium"
+    },
+    "sol_review_worker": {
+      "file": "sol-review-worker.toml",
+      "codename": "Uika",
+      "provider": "default",
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "high"
+    }
+  }
+}

@@ -12,6 +12,8 @@
 | Narrow | High | `luna_high_worker` |
 | Narrow | Exceptional quality-first | `luna_max_worker` |
 | Any | High scientific risk | primary agent decides; worker only gathers evidence or implements an exact rule |
+| Any, Sol primary | Independent high-risk review | `astra_review_worker` once, medium reasoning, read-only |
+| Any, Astra primary | Independent high-risk review | `sol_review_worker` once, read-only |
 
 ## DeepSeek context routes
 
@@ -74,3 +76,16 @@ DeepSeek read-only survey -> primary decision -> DeepSeek batch or Luna write
 
 Never switch workers merely because chat status still says `running` after an
 artifact appears. Confirm process, state, and binding status first.
+
+## Cross-review routes
+
+Cross-review is exceptional, not a mandatory stage. Use it only for an explicit
+request, a high-impact scientific or architectural decision, or a genuine dispute
+that independent reasoning can resolve. Give the reviewer a compact immutable
+evidence bundle and one question. The reviewer cannot write, dispatch, accept, or
+supersede the selected primary.
+
+Do not spawn `astra_review_worker` when Astra is already the primary, or
+`sol_review_worker` when Sol is already the primary. Do not use a reviewer to repeat
+ordinary final review. Astra review defaults to medium reasoning and one pass to
+control quota use.

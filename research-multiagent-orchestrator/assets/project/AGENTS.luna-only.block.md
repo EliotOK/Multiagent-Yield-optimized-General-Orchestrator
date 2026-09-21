@@ -1,16 +1,22 @@
 <!-- research-multiagent-orchestrator:start -->
 ## Research multi-agent workflow (Luna-only)
 
-The primary agent owns interpretation, scientific assumptions, architecture,
-acceptance criteria, final diff review, independent validation, and integration.
+At first MYGO use in a conversation, select one Astra or Sol primary. The selected
+primary alone owns interpretation, scientific assumptions, architecture, dispatch,
+acceptance, final diff review, independent validation, and integration.
+Resolve models, effort, and child codenames from `.codex/mygo-model-map.json`.
 DeepSeek routing is disabled for this project. Keep repository-wide context work
 with the primary agent. Route ordinary bounded coding to `luna_medium_worker`,
 complex localized debugging and implementation to `luna_high_worker`, and explicit
 quality-first escalation to `luna_max_worker`. Use `terra_readonly_fallback_worker`
 for read-only reconstruction and `terra_fallback_worker` for write recovery only after
 a diagnosed failure, confirmed worker stop, and a new immutable task.
+Use `astra_review_worker` only for a bounded read-only second opinion under Sol,
+and `sol_review_worker` only for one under Astra. Reviewers never write, dispatch,
+or accept.
 
-Use unique immutable task and binding artifacts. Run at most one delegated worker
+Use unique immutable task and binding artifacts, record the primary profile, and
+run at most one delegated worker
 at a time. Observe dynamically and never switch because of elapsed time
 alone. Treat raw data as immutable. Never silently alter rows, units, CRS,
 missingness, taxonomy, or scientific assumptions. Review every diff independently.

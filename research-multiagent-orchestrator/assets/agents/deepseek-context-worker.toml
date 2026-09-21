@@ -1,7 +1,7 @@
 name = "deepseek_context_worker"
 description = "Fast read-only long-context worker for repository maps, file inventories, metadata extraction, and long-log reduction when deep reasoning is unnecessary."
 model_provider = "deepseek"
-model = "deepseek-v4-flash"
+model = "deepseek-flash"
 model_reasoning_effort = "low"
 sandbox_mode = "read-only"
 developer_instructions = """

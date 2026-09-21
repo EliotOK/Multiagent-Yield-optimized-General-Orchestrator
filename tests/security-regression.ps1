@@ -45,6 +45,14 @@ try {
         & $create -ProjectRoot $project -Worker deepseek_context_worker `
             -Objective 'sensitive external route' -Mode READ_ONLY
     } 'external provider'
+    Expect-Failure {
+        & $create -ProjectRoot $project -Worker astra_review_worker `
+            -Objective 'wrong primary reviewer' -PrimaryProfile ASTRA
+    } 'requires PrimaryProfile SOL'
+    Expect-Failure {
+        & $create -ProjectRoot $project -Worker sol_review_worker `
+            -Objective 'wrong primary reviewer' -PrimaryProfile SOL
+    } 'requires PrimaryProfile ASTRA'
 
     $taskOutput = & $create -ProjectRoot $project -Worker luna_medium_worker `
         -Objective "Heading text is quoted`n## not a control section" `

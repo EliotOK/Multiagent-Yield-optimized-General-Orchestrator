@@ -1,13 +1,40 @@
 ---
 name: research-multiagent-orchestrator
-description: Route and supervise scientific coding work across a primary Sol reviewer, DeepSeek V4 Flash long-context workers, and tiered Luna medium/high/max coding workers. Use when Codex must inspect a large R/Python/GIS repository, reconstruct data lineage, audit schemas or variables, process long logs, make bounded repetitive edits, debug a difficult localized failure, tune worker latency, or install, verify, repair, and operate this planner-worker-reviewer workflow.
+description: MYGO routes and supervises scientific coding through one conversation-scoped Astra or Sol primary, DeepSeek V4.1 Flash long-context workers, tiered Luna coding workers, and read-only cross-reviewers. Use when Codex must inspect a large R/Python/GIS repository, reconstruct data lineage, audit schemas or variables, process long logs, make bounded repetitive edits, debug a difficult localized failure, tune worker latency, or install, verify, repair, and operate this planner-worker-reviewer workflow.
 ---
 
 # Research Multi-Agent Orchestrator
 
-Keep the primary agent responsible for task interpretation, scientific judgment,
-architecture, acceptance criteria, final diff review, validation, and integration.
-Delegate only bounded investigation or implementation.
+Keep exactly one primary agent responsible for task interpretation, scientific
+judgment, architecture, acceptance criteria, final diff review, validation, and
+integration. Delegate only bounded investigation, implementation, or advisory
+review.
+
+## Choose the primary profile
+
+Read [primary-profiles.md](references/primary-profiles.md) before any delegation.
+Read [model-map.md](references/model-map.md) when selecting or changing models,
+reasoning effort, providers, or worker codenames. Resolve the project's
+`.codex/mygo-model-map.json` before delegation. On the first MYGO invocation in a
+conversation, honor an explicit user choice; otherwise follow `default_primary`.
+When it is `ASK`, ask the user to choose **Astra primary** or **Sol primary**.
+Prefer a native structured choice card when available; otherwise ask one concise
+text question and wait. Do not spawn workers or modify files before the choice is
+known.
+
+Treat the choice as conversation-scoped. Do not ask again unless the user requests
+a switch. Never imply that a skill changed the root model: if the selected profile
+does not match the current conversation model, ask the user to switch the composer
+model or start a matching task. If the current model cannot be verified, say so and
+ask the user to confirm it.
+
+Confirm that the selected root model and reasoning effort match the resolved primary
+profile. The shipped defaults are Astra at medium and Sol at high. Only the selected
+primary may dispatch write-capable workers, modify or integrate
+code, and accept the result. In Sol-primary sessions, `astra_review_worker` is an
+optional quota-conscious read-only second opinion. In Astra-primary sessions,
+`sol_review_worker` is the corresponding read-only second opinion. Never use either
+reviewer as a second controller.
 
 ## Select a route
 
@@ -34,7 +61,12 @@ Use these defaults:
 - Use `terra_readonly_fallback_worker` to reconstruct evidence after a diagnosed
   failure without workspace writes. Use `terra_fallback_worker` only when a new
   bounded recovery task genuinely requires writes.
-- Keep scientific decisions and final review with the primary agent.
+- Keep scientific decisions and final review with the selected primary agent.
+- Use `astra_review_worker` only in a Sol-primary session for an explicit or
+  high-risk second opinion. It is medium-reasoning, read-only, and single-pass by
+  default.
+- Use `sol_review_worker` only in an Astra-primary session for an explicit or
+  high-risk second opinion. It is read-only and advisory.
 - Do not delegate a trivial edit when coordination costs more than the work.
 
 Treat DeepSeek as an external data recipient. Default every task to `LOCAL_ONLY`.
@@ -81,10 +113,17 @@ to run MYGO.
 Read [task-protocol.md](references/task-protocol.md) before spawning a worker.
 Inspect repository status and relevant project instructions first.
 
-Create an immutable task and binding with `scripts/create-task.ps1`. Supply the
+Create an immutable task and binding with `scripts/create-task.ps1`, including the
+selected `-PrimaryProfile ASTRA` or `-PrimaryProfile SOL` and a concise English
+`-TaskLabel` that describes the work. Before task creation, ensure the label is
+unique among child tasks in the current conversation; use a readable sequence such
+as `schema audit 2` only when needed. Supply the
 generated task ID, absolute task path, binding path, SHA-256, canonical root, and
 expected timing in the spawn message. Use a no-history fork for a custom agent.
-Use the script's ready-to-send spawn payload verbatim. When it contains all binding
+Use the script's ready-to-send spawn payload verbatim, including its codename-based
+semantic `task_name`, such as `anon_schema_audit`. Keep the random task-ID suffix
+only in coordination artifacts; never use it as the child task name. When the
+payload contains all binding
 fields, require the worker to read task and binding together and skip descriptor
 discovery, task-directory scans, a separate plan, and a separate acknowledgement.
 

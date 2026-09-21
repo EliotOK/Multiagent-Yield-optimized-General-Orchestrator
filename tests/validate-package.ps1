@@ -18,13 +18,21 @@ foreach ($relative in @('README.md', 'README.zh-CN.md')) {
 foreach ($relative in @(
     'SKILL.md', 'agents\openai.yaml', 'scripts\install-workflow.ps1',
     'scripts\set-deepseek-key.ps1',
+    'scripts\configure-model-map.ps1',
     'scripts\update-task-state.ps1',
     'scripts\create-task.ps1', 'scripts\close-task.ps1',
+    'references\primary-profiles.md', 'references\model-map.md',
+    'assets\project\mygo-model-map.json',
+    'assets\agents\deepseek-context-worker.toml',
+    'assets\agents\deepseek-context-reasoning-worker.toml',
+    'assets\agents\deepseek-batch-worker.toml',
     'assets\agents\luna-medium-worker.toml',
     'assets\agents\luna-high-worker.toml',
     'assets\agents\luna-max-worker.toml',
     'assets\agents\terra-readonly-fallback-worker.toml',
-    'assets\agents\terra-fallback-worker.toml'
+    'assets\agents\terra-fallback-worker.toml',
+    'assets\agents\astra-review-worker.toml',
+    'assets\agents\sol-review-worker.toml'
 )) {
     $path = Join-Path $SkillRoot $relative
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -76,7 +84,8 @@ if ($forbidden) {
 $englishReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.md') -Raw -Encoding UTF8
 $chineseReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.zh-CN.md') -Raw -Encoding UTF8
 foreach ($requiredText in @('v0.1.0-beta.4', 'ProjectOnly', 'LunaOnly',
-        'security-regression.ps1', 'APPROVED_EXTERNAL', 'terra_readonly_fallback_worker')) {
+        'security-regression.ps1', 'APPROVED_EXTERNAL', 'terra_readonly_fallback_worker',
+        'MYGO', 'Astra primary', 'Sol primary', 'deepseek-flash')) {
     if ($englishReadme -notmatch [regex]::Escape($requiredText) -or
         $chineseReadme -notmatch [regex]::Escape($requiredText)) {
         throw "Bilingual documentation parity check failed for: $requiredText"

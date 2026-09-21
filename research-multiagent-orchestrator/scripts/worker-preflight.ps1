@@ -35,6 +35,12 @@ if (Test-Path -LiteralPath $descriptor) {
     $rootToml = $ProjectRoot.Replace('\', '/')
     Add-Check 'descriptor_root_matches' ($descriptorText -match ('canonical_root\s*=\s*"' + [regex]::Escape($rootToml) + '"')) $rootToml
     Add-Check 'descriptor_protocol' ($descriptorText -match '(?m)^protocol_version\s*=\s*3\s*$') 'protocol_version=3'
+    Add-Check 'descriptor_primary_profile_mode' `
+        ($descriptorText -match '(?m)^primary_profile_mode\s*=\s*"session-choice"\s*$') `
+        'primary_profile_mode=session-choice'
+    Add-Check 'descriptor_model_map_schema' `
+        ($descriptorText -match '(?m)^model_map_schema\s*=\s*1\s*$') `
+        'model_map_schema=1'
 }
 
 $bindingDir = Join-Path $ProjectRoot '.codex\bindings'
@@ -66,7 +72,23 @@ if (-not [string]::IsNullOrWhiteSpace($TaskId)) {
         Add-Check 'binding_task_id' ($binding.task_id -eq $TaskId) ([string]$binding.task_id)
         Add-Check 'binding_status' ($binding.status -eq 'READY') ([string]$binding.status)
         Add-Check 'binding_worker' (-not [string]::IsNullOrWhiteSpace([string]$binding.worker_name)) ([string]$binding.worker_name)
+        Add-Check 'binding_worker_codename' `
+            ([string]$binding.worker_codename -match '^[A-Za-z][A-Za-z0-9_-]{0,31}$') `
+            ([string]$binding.worker_codename)
         Add-Check 'binding_mode' ($binding.mode -in @('READ_ONLY', 'WORKSPACE_WRITE')) ([string]$binding.mode)
+        Add-Check 'binding_primary_profile' `
+            ($binding.primary_profile -in @('ASTRA', 'SOL', 'UNSPECIFIED')) `
+            ([string]$binding.primary_profile)
+        if ($binding.worker_name -eq 'astra_review_worker') {
+            Add-Check 'reviewer_primary_match' `
+                ($binding.primary_profile -eq 'SOL' -and $binding.mode -eq 'READ_ONLY') `
+                'astra_review_worker requires SOL/READ_ONLY'
+        }
+        if ($binding.worker_name -eq 'sol_review_worker') {
+            Add-Check 'reviewer_primary_match' `
+                ($binding.primary_profile -eq 'ASTRA' -and $binding.mode -eq 'READ_ONLY') `
+                'sol_review_worker requires ASTRA/READ_ONLY'
+        }
         $expectedTaskPath = Join-Path $ProjectRoot ".codex\tasks\$TaskId.md"
         $expectedStatePath = Join-Path $ProjectRoot "work\worker_state\$TaskId.json"
         $boundTaskPath = [IO.Path]::GetFullPath([string]$binding.task_path)

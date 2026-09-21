@@ -30,8 +30,17 @@ output-received, and agent-completed times without adding acknowledgement turns.
 
 ## Binding rules
 
-Bind a worker to the task ID, canonical root, absolute task path, worker name, and
-task SHA-256. Put every field in the spawn message. Read task and binding together
+Bind a worker to the task ID, canonical root, absolute task path, stable worker role,
+display codename, concise task label, selected primary profile, and task SHA-256.
+Put every field in the spawn message. Use a semantic child name in the form
+`codename_task_description`, such as `anon_schema_audit`, while keeping the stable
+worker role for routing and audit. The child API accepts lowercase letters, numbers,
+and underscores, so the script normalizes the human-readable display form
+`Anon — schema audit`. Keep the random task-ID suffix out of the child name. If a
+semantic name already exists in the conversation, choose a readable numbered label
+before task creation, such as `schema audit 2`.
+Use `ASTRA` or `SOL`; `UNSPECIFIED` exists only for backward-compatible non-review
+tasks and must not be used by new MYGO orchestration. Read task and binding together
 in the first tool call; skip the project descriptor and directory discovery when
 the message is complete. Check once before the first write and once before return.
 Do not repeat hashes, Git status, and path checks before every command.
@@ -40,6 +49,9 @@ Only if the initial spawn message is incomplete, read the project descriptor and
 accept exactly one `READY` binding
 whose `worker_name` matches the current agent. Stop on zero, multiple, changed,
 missing, outside-root, or hash-mismatched bindings.
+
+`astra_review_worker` requires `primary_profile=SOL`; `sol_review_worker` requires
+`primary_profile=ASTRA`. Both require `READ_ONLY` mode. A mismatch is a hard stop.
 
 ## Waiting
 

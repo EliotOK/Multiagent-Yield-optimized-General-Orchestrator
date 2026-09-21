@@ -45,6 +45,30 @@ try {
     & (Join-Path $SkillRoot 'scripts\install-workflow.ps1') `
         -ProjectRoot $testProject -CodexHome $testCodex -ForceAgentUpdate -Apply
     if (-not $?) { throw 'Installer smoke test failed.' }
+    & (Join-Path $SkillRoot 'scripts\configure-model-map.ps1') `
+        -ProjectRoot $testProject -CodexHome $testCodex -Check | Out-Null
+    if (-not $?) { throw 'Default model map does not match installed agents.' }
+
+    $modelMapPath = Join-Path $testProject '.codex\mygo-model-map.json'
+    $modelMap = Get-Content -LiteralPath $modelMapPath -Raw | ConvertFrom-Json
+    $modelMap.agents.luna_medium_worker.reasoning_effort = 'high'
+    [IO.File]::WriteAllText($modelMapPath, ($modelMap | ConvertTo-Json -Depth 8) + "`r`n")
+    $lunaAgentPath = Join-Path $testCodex 'agents\luna-medium-worker.toml'
+    $lunaBeforePreview = (Get-FileHash -LiteralPath $lunaAgentPath -Algorithm SHA256).Hash
+    & (Join-Path $SkillRoot 'scripts\configure-model-map.ps1') `
+        -ProjectRoot $testProject -CodexHome $testCodex | Out-Null
+    if ((Get-FileHash -LiteralPath $lunaAgentPath -Algorithm SHA256).Hash -ne $lunaBeforePreview) {
+        throw 'Model-map preview modified an installed agent.'
+    }
+    & (Join-Path $SkillRoot 'scripts\configure-model-map.ps1') `
+        -ProjectRoot $testProject -CodexHome $testCodex -Apply | Out-Null
+    if ((Get-Content -LiteralPath $lunaAgentPath -Raw) -notmatch '(?m)^model_reasoning_effort\s*=\s*"high"\s*$') {
+        throw 'Model-map apply did not update the selected role.'
+    }
+    $modelMap.agents.luna_medium_worker.reasoning_effort = 'medium'
+    [IO.File]::WriteAllText($modelMapPath, ($modelMap | ConvertTo-Json -Depth 8) + "`r`n")
+    & (Join-Path $SkillRoot 'scripts\configure-model-map.ps1') `
+        -ProjectRoot $testProject -CodexHome $testCodex -Apply | Out-Null
 
     $initialSnapshot = @(Get-ChildItem -LiteralPath $testProject, $testCodex -Recurse -File | ForEach-Object {
         "$($_.FullName)=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
@@ -60,6 +84,8 @@ try {
 
     $taskOutput = & (Join-Path $SkillRoot 'scripts\create-task.ps1') `
         -ProjectRoot $testProject -Worker luna_medium_worker `
+        -PrimaryProfile SOL `
+        -TaskLabel 'release smoke' `
         -Objective 'Release smoke test. No worker is spawned.' `
         -AllowedFiles 'outputs/smoke.txt' -ValidationCommands 'node --version'
     $taskId = ($taskOutput | Where-Object { $_ -like 'TASK_ID=*' } | Select-Object -First 1) -replace '^TASK_ID=', ''
@@ -67,7 +93,9 @@ try {
 
     $bindingPath = Join-Path $testProject ".codex\bindings\$taskId.json"
     $binding = Get-Content -LiteralPath $bindingPath -Raw | ConvertFrom-Json
-    if ($binding.worker_name -ne 'luna_medium_worker' -or $binding.protocol_version -ne 3) {
+    if ($binding.worker_name -ne 'luna_medium_worker' -or $binding.worker_codename -ne 'Anon' -or
+        $binding.task_label -ne 'release smoke' -or $binding.task_name -ne 'anon_release_smoke' -or
+        $binding.protocol_version -ne 3 -or $binding.primary_profile -ne 'SOL') {
         throw 'create-task binding did not preserve the expected worker and protocol version.'
     }
 
@@ -117,6 +145,11 @@ try {
     & (Join-Path $SkillRoot 'scripts\verify-workflow.ps1') `
         -ProjectRoot $lunaProject -CodexHome $lunaCodex -LunaOnly
     if (-not $?) { throw 'Luna-only verification failed.' }
+    foreach ($reviewer in @('astra-review-worker.toml', 'sol-review-worker.toml')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $lunaCodex "agents\$reviewer"))) {
+            throw "Luna-only mode did not install cross-review agent: $reviewer"
+        }
+    }
     $deepSeekRejected = $false
     try {
         & (Join-Path $SkillRoot 'scripts\create-task.ps1') `

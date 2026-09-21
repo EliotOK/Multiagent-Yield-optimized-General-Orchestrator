@@ -1,4 +1,4 @@
 interface:
-  display_name: "Research Multi-Agent Orchestrator"
-  short_description: "Route scientific coding across Sol, DeepSeek, and tiered Luna"
-  default_prompt: "Use $research-multiagent-orchestrator to route and execute this scientific coding task with the appropriate worker and final Sol review."
+  display_name: "MYGO — Multi-Agent Orchestrator"
+  short_description: "Configurable Astra/Sol scientific multi-agent workflow"
+  default_prompt: "Use $research-multiagent-orchestrator. Resolve the project model map, ask me to choose Astra or Sol when default_primary is ASK, then route and supervise the scientific coding task with one final authority."

@@ -1,10 +1,17 @@
 <!-- research-multiagent-orchestrator-global:start -->
 # Planner-worker-reviewer workflow
 
-The primary Codex agent owns task interpretation, scientific assumptions,
-architecture, decomposition, acceptance criteria, final review, validation, and
-integration. Use `$research-multiagent-orchestrator` for nontrivial scientific
-coding delegation.
+On first `$research-multiagent-orchestrator` use in a conversation, select exactly
+one primary profile: Astra or Sol. The selected primary alone owns task
+interpretation, scientific assumptions, architecture, decomposition, worker
+dispatch, acceptance criteria, final review, validation, and integration. Reuse
+the selection for the conversation and never pretend a skill switched the root
+model.
+Resolve models, reasoning effort, providers, and child codenames from the project's
+`.codex/mygo-model-map.json`. Keep stable role names in bindings; use the generated
+semantic codename-based task name for child threads, such as
+`anon_schema_audit`. Keep random task-ID suffixes in coordination artifacts, not
+visible child names.
 
 Use `deepseek_context_worker` for low-reasoning long-context inventory and log
 reduction, `deepseek_context_reasoning_worker` for complex lineage and schema audits,
@@ -13,12 +20,18 @@ ordinary bounded coding, `luna_high_worker` for complex localized work,
 `luna_max_worker` only for explicit quality-first escalation,
 `terra_readonly_fallback_worker` for read-only failure reconstruction, and
 `terra_fallback_worker` for bounded write recovery only after diagnosed failure.
+In a Sol-primary session, use `astra_review_worker` only as a quota-conscious,
+read-only, single-pass second opinion. Its shipped effort is medium. In an
+Astra-primary session, use
+`sol_review_worker` only as a read-only second opinion. Neither reviewer may write,
+dispatch, or accept results.
 Keep trivial work with the
 primary agent when worker startup is likely to cost more than the task.
 
 Use unique immutable `.codex/tasks/<task-id>.md` and
 `.codex/bindings/<task-id>.json` artifacts. Never use the legacy singleton
-`.codex/deepseek-worker-task.md`. Run only one delegated worker at a time.
+`.codex/deepseek-worker-task.md`. Record the selected primary profile in every new
+binding. Run only one delegated worker at a time.
 Never switch workers because of elapsed time alone, and never remove a binding until
 the worker and child processes are confirmed stopped.
 

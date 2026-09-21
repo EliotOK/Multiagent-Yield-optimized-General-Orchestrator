@@ -1,7 +1,7 @@
 name = "deepseek_batch_worker"
 description = "Low-cost worker for bounded repetitive code and data-pipeline edits across many files after an approved repository audit."
 model_provider = "deepseek"
-model = "deepseek-v4-flash"
+model = "deepseek-flash"
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 developer_instructions = """

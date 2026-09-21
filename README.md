@@ -4,9 +4,10 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Windows-first Codex skill for scientific coding projects that routes work across a
-primary reviewer, DeepSeek V4 Flash long-context workers, and tiered Luna coding
-workers.
+Windows-first Codex skill for scientific coding projects. On first use in a
+conversation, MYGO asks the user to choose an Astra primary or Sol primary, then
+routes bounded work across DeepSeek V4.1 Flash (`deepseek-flash`) long-context
+workers and tiered Luna coding workers.
 
 The distributable Codex skill keeps the descriptive internal name
 `research-multiagent-orchestrator` so its purpose and trigger remain explicit.
@@ -16,9 +17,17 @@ The distributable Codex skill keeps the descriptive internal name
 
 ## What it does
 
-The primary Codex agent retains task interpretation, scientific decisions,
-architecture, acceptance criteria, final review, and validation. It routes bounded
-work as follows:
+Exactly one selected primary retains task interpretation, scientific decisions,
+architecture, worker dispatch, acceptance criteria, final review, and validation
+for the conversation. The other flagship model can only provide a bounded,
+read-only second opinion; it is never a second controller.
+
+| Primary profile | Optional cross-review |
+| --- | --- |
+| Astra primary | `sol_review_worker` for a high-risk or explicit second opinion |
+| Sol primary | `astra_review_worker`, medium reasoning and one pass by default |
+
+The primary routes bounded work as follows:
 
 | Work shape | Default route |
 | --- | --- |
@@ -71,7 +80,9 @@ re-enable DeepSeek. If global Codex changes are not authorized, also pass
 AGENTS.md. ProjectOnly changes installation scope only: preserve full DeepSeek
 routing when all compatible user-level agents, provider configuration, and the key
 already exist; otherwise stop before writing. LunaOnly disables DeepSeek and keeps
-long-context work with the primary agent. Reserve Terra for diagnosed sequential
+long-context work with the selected primary agent. On the first MYGO task, ask me
+to choose Astra primary or Sol primary; do not claim that the skill can silently
+change the current task's root model. Reserve Terra for diagnosed sequential
 fallback. Tell me when a full Codex Desktop restart is required.
 ```
 
@@ -131,11 +142,42 @@ In Codex, start a task with:
 
 ```text
 Use $research-multiagent-orchestrator for this scientific coding task.
-Keep scientific interpretation and final review with the primary agent.
+If this is its first use in the conversation, let me choose Astra primary or Sol
+primary. Keep scientific interpretation and final review with that one primary.
 Route only work that can amortize worker startup, and review every worker diff.
 ```
 
 See [examples](examples) for scientific-task prompts and expected routing.
+
+### Change models without changing the topology
+
+MYGO creates `.codex/mygo-model-map.json`. Its shipped primary settings are
+`default_primary = ASK`, Astra at `gpt-6-astra / medium`, and Sol at
+`gpt-5.6-sol / high`. `ASK` means there is no silent default primary: MYGO asks once
+per conversation.
+
+Every worker has a stable technical role plus a human-facing codename inspired by
+MyGO!!!!! and Ave Mujica. Codenames label child threads only; they do not inject a
+fictional personality into scientific work. Edit the map to change a node's model,
+provider, effort, or codename, then preview and apply:
+
+Child names combine the codename with a concise task description—for example,
+`Anon — schema audit` in user-facing text and `anon_schema_audit` in the Codex
+dispatch API. Random suffixes remain only in immutable audit IDs and are not shown
+as child names. Repeated descriptions use readable numbering such as
+`anon_schema_audit_2`.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  <SKILL_PATH>\scripts\configure-model-map.ps1 -ProjectRoot "D:\path\to\project"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  <SKILL_PATH>\scripts\configure-model-map.ps1 -ProjectRoot "D:\path\to\project" -Apply
+```
+
+Fully restart Codex and run `verify-workflow.ps1` afterward. The map never stores
+API keys. Stable role keys and filenames are protocol identifiers; changing the
+topology still requires a versioned skill migration.
 
 ## Safety model
 
@@ -148,6 +190,8 @@ See [examples](examples) for scientific-task prompts and expected routing.
 - Treat raw data as immutable.
 - Do not silently alter rows, units, CRS, missingness, taxonomy, or assumptions.
 - Run only one delegated worker at a time. The task protocol is deliberately serial.
+- Cross-reviewers are read-only and advisory; only the selected primary can
+  dispatch write work, integrate changes, or accept a result.
 - Use immutable task and binding records for every delegation.
 - Archive coordination evidence after review; do not delete it while a worker might
   still write.
@@ -159,6 +203,11 @@ See [examples](examples) for scientific-task prompts and expected routing.
   task/binding fallback handles this, but can add startup delay.
 - Luna startup latency can vary materially. Use Luna medium for ordinary bounded
   work; reserve high and max for measured quality gains.
+- The skill cannot change the root model of an existing conversation. If the chosen
+  profile differs from the composer model, switch the model or start a matching
+  task before dispatch. Astra cross-review is deliberately single-pass at medium
+  effort by default and
+  single-pass by default to limit quota use.
 - A separate throwaway "warm-up" worker is not expected to warm a later independent
   worker thread. Persistent same-thread reuse is experimental and is not enabled by
   default until it demonstrates a latency benefit in repeated A/B tests.

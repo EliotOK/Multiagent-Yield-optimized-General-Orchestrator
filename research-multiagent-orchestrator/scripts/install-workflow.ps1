@@ -237,6 +237,13 @@ function Normalize-Newlines([string]$Text) {
     return ([regex]::Replace($Text, "\r\n|\r|\n", "`r`n")).TrimEnd() + "`r`n"
 }
 
+function Normalize-AgentTemplate([string]$Text) {
+    $normalized = Normalize-Newlines $Text
+    return ([regex]::Replace($normalized,
+        '(?m)^(model_provider|model|model_reasoning_effort)\s*=\s*"[^"\r\n]*"\s*\r?\n?',
+        '')).TrimEnd() + "`r`n"
+}
+
 function Set-ManagedBlock {
     param(
         [string]$Path,
@@ -296,6 +303,7 @@ $projectManagedPaths = @(
     (Join-Path $ProjectRoot 'work'),
     (Join-Path $ProjectRoot 'work\worker_state'),
     (Join-Path $ProjectRoot '.codex\research-multiagent.toml'),
+    (Join-Path $ProjectRoot '.codex\mygo-model-map.json'),
     (Join-Path $ProjectRoot 'AGENTS.md'),
     (Join-Path $ProjectRoot '.gitignore')
 )
@@ -306,6 +314,16 @@ Assert-ManagedBlockUnambiguous -Path (Join-Path $ProjectRoot 'AGENTS.md') `
 Assert-ManagedBlockUnambiguous -Path (Join-Path $ProjectRoot '.gitignore') `
     -StartMarker '# research-multiagent-orchestrator:start' `
     -EndMarker '# research-multiagent-orchestrator:end'
+$preflightModelMapPath = Join-Path $ProjectRoot '.codex\mygo-model-map.json'
+if (Test-Path -LiteralPath $preflightModelMapPath -PathType Leaf) {
+    try {
+        $preflightModelMap = Get-Content -LiteralPath $preflightModelMapPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($preflightModelMap.schema_version -ne 1) { throw 'unsupported schema' }
+    }
+    catch {
+        throw "Existing MYGO model map is invalid; no files were changed: $preflightModelMapPath"
+    }
+}
 
 if (-not $ProjectOnly) {
     foreach ($path in @($CodexHome, (Join-Path $CodexHome 'agents'),
@@ -320,7 +338,9 @@ if (-not $ProjectOnly) {
         if ((Test-Path -LiteralPath $target -PathType Leaf) -and -not $ForceAgentUpdate) {
             $sourceText = Get-Content -LiteralPath $source.FullName -Raw -Encoding UTF8
             $targetText = Get-Content -LiteralPath $target -Raw -Encoding UTF8
-            if ($sourceText -cne $targetText -and $Apply) {
+            if ($sourceText -cne $targetText -and
+                (Normalize-AgentTemplate $sourceText) -cne (Normalize-AgentTemplate $targetText) -and
+                $Apply) {
                 throw "Refusing to overwrite custom agent before making any changes: $target"
             }
         }
@@ -356,7 +376,8 @@ if (-not $ProjectOnly) {
 else {
     $requiredAgentNames = @('luna-medium-worker.toml', 'luna-high-worker.toml',
         'luna-max-worker.toml', 'terra-readonly-fallback-worker.toml',
-        'terra-fallback-worker.toml')
+        'terra-fallback-worker.toml', 'astra-review-worker.toml',
+        'sol-review-worker.toml')
     if (-not $LunaOnly) {
         $requiredAgentNames = @('deepseek-context-worker.toml',
             'deepseek-context-reasoning-worker.toml', 'deepseek-batch-worker.toml') +
@@ -402,7 +423,7 @@ else {
             $expectedAgentPath = Join-Path (Join-Path $AssetRoot 'agents') $name
             $installedAgentText = Get-Content -LiteralPath $agentPath -Raw -Encoding UTF8
             $expectedAgentText = Get-Content -LiteralPath $expectedAgentPath -Raw -Encoding UTF8
-            if ((Normalize-Newlines $installedAgentText) -cne (Normalize-Newlines $expectedAgentText)) {
+            if ((Normalize-AgentTemplate $installedAgentText) -cne (Normalize-AgentTemplate $expectedAgentText)) {
                 $missingPrerequisites.Add("incompatible agent: $agentPath")
             }
         }
@@ -448,7 +469,11 @@ foreach ($source in Get-ChildItem -LiteralPath $agentSource -Filter '*.toml' -Fi
         Get-Content -LiteralPath $target -Raw -Encoding UTF8
     } else { $null }
     if ($sourceText -cne $targetText) {
-        if ($null -ne $targetText -and -not $ForceAgentUpdate) {
+        if ($null -ne $targetText -and
+            (Normalize-AgentTemplate $sourceText) -ceq (Normalize-AgentTemplate $targetText)) {
+            Add-Action "PRESERVE    $target (model map binding)"
+        }
+        elseif ($null -ne $targetText -and -not $ForceAgentUpdate) {
             Add-Action "CONFLICT    $target (rerun with -ForceAgentUpdate after review)"
             if ($Apply) { throw "Refusing to overwrite custom agent: $target" }
         }
@@ -487,6 +512,19 @@ foreach ($relative in @('.codex', '.codex\tasks', '.codex\bindings',
     Ensure-Directory (Join-Path $ProjectRoot $relative)
 }
 
+$modelMapPath = Join-Path $ProjectRoot '.codex\mygo-model-map.json'
+$defaultModelMapPath = Join-Path $AssetRoot 'project\mygo-model-map.json'
+if (-not (Test-Path -LiteralPath $modelMapPath -PathType Leaf)) {
+    Add-Action "CREATE      $modelMapPath"
+    if ($Apply) {
+        $modelMapText = Get-Content -LiteralPath $defaultModelMapPath -Raw -Encoding UTF8
+        Write-AtomicText $modelMapPath $modelMapText
+    }
+}
+else {
+    Add-Action "PRESERVE    $modelMapPath"
+}
+
 $descriptorPath = Join-Path $ProjectRoot '.codex\research-multiagent.toml'
 $rootForToml = $ProjectRoot.Replace('\', '/')
 $descriptor = @"
@@ -495,7 +533,10 @@ task_directory = "$rootForToml/.codex/tasks"
 binding_directory = "$rootForToml/.codex/bindings"
 state_directory = "$rootForToml/work/worker_state"
 protocol_version = 3
+primary_profile_mode = "session-choice"
 deepseek_enabled = $(((-not $LunaOnly).ToString().ToLowerInvariant()))
+model_map = "$rootForToml/.codex/mygo-model-map.json"
+model_map_schema = 1
 installation_scope = "$(if ($ProjectOnly) { 'project-only' } else { 'user-and-project' })"
 "@
 $oldDescriptor = if (Test-Path -LiteralPath $descriptorPath) {
