@@ -182,6 +182,45 @@ try {
         -ConfirmWorkerStopped -Apply
     if (-not $?) { throw 'role-mode close-task smoke test failed.' }
 
+    $codenameMapPath = Join-Path $testProject '.codex\mygo-model-map.json'
+    $originalMapText = Get-Content -LiteralPath $codenameMapPath -Raw -Encoding UTF8
+    try {
+        $hyphenMap = $originalMapText | ConvertFrom-Json
+        foreach ($entry in $hyphenMap.agents.PSObject.Properties) {
+            $entry.Value.codename = 'Ave-Mujica'
+        }
+        [IO.File]::WriteAllText($codenameMapPath, ($hyphenMap | ConvertTo-Json -Depth 12),
+            [Text.UTF8Encoding]::new($false))
+        foreach ($codenameMode in @('random', 'role')) {
+            $hyphenOutput = & (Join-Path $SkillRoot 'scripts\create-task.ps1') `
+                -ProjectRoot $testProject -Worker luna_medium_worker `
+                -ObservedPrimaryModel 'gpt-5.6-sol' -ObservedPrimaryEffort high `
+                -TaskLabel 'hyphen smoke' -Objective 'Codename normalization fixture; no worker is spawned.' `
+                -AllowedFiles 'outputs/smoke.txt' -ValidationCommands 'node --version' `
+                -CodenameMode $codenameMode
+            $hyphenId = ($hyphenOutput | Where-Object { $_ -like 'TASK_ID=*' } | Select-Object -First 1) -replace '^TASK_ID=', ''
+            if (-not $hyphenId) { throw 'Hyphen codename task was not created.' }
+            $hyphenBinding = Get-Content -LiteralPath (Join-Path $testProject ".codex\bindings\$hyphenId.json") -Raw |
+                ConvertFrom-Json
+            if ($hyphenBinding.task_name -ne 'ave_mujica_hyphen_smoke' -or
+                $hyphenBinding.worker_codename -ne 'Ave-Mujica' -or
+                $hyphenBinding.spawn_codename -ne 'Ave-Mujica' -or
+                $hyphenBinding.codename_source -ne $codenameMode -or
+                $hyphenBinding.worker_name -ne 'luna_medium_worker') {
+                throw "Hyphen codename normalization failed in $codenameMode mode."
+            }
+            & (Join-Path $SkillRoot 'scripts\update-task-state.ps1') `
+                -ProjectRoot $testProject -TaskId $hyphenId -NewState INTERRUPTED | Out-Null
+            & (Join-Path $SkillRoot 'scripts\close-task.ps1') `
+                -ProjectRoot $testProject -TaskId $hyphenId -Outcome INTERRUPTED `
+                -ConfirmWorkerStopped -Apply | Out-Null
+            if (-not $?) { throw 'Hyphen codename task archival failed.' }
+        }
+    }
+    finally {
+        [IO.File]::WriteAllText($codenameMapPath, $originalMapText, [Text.UTF8Encoding]::new($false))
+    }
+
     & git -C $testProject init --quiet
     foreach ($ignoredPath in @('.codex/research-multiagent.toml',
             ".codex/diagnostics/task-history/$taskId/task.md",

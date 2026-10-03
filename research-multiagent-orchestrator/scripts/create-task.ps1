@@ -291,7 +291,7 @@ $taskLabel = if ([string]::IsNullOrWhiteSpace($TaskLabel)) {
 if ($taskLabel.Length -gt 80) {
     $taskLabel = $taskLabel.Substring(0, 80).TrimEnd()
 }
-$taskNamePrefix = $spawnCodename.ToLowerInvariant()
+$taskNamePrefix = ConvertTo-TaskSlug $spawnCodename 32
 $taskSlug = ConvertTo-TaskSlug $taskLabel ([math]::Max(8, 63 - $taskNamePrefix.Length))
 $spawnTaskName = $taskNamePrefix + '_' + $taskSlug
 $taskDisplayName = $spawnCodename + ' — ' + $taskLabel

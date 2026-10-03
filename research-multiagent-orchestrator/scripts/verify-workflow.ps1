@@ -226,10 +226,10 @@ if (Test-Path -LiteralPath $taskDir -PathType Container) {
 Add-Check 'ready_tasks' $(if ($ready.Count -le 1) { 'PASS' } else { 'FAIL' }) "count=$($ready.Count)"
 
 if (-not $LunaOnly) {
-    $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
-    $keyPresent = (Test-Path -LiteralPath 'Env:DEEPSEEK_API_KEY') -or
-        ($null -ne $environmentKey -and 'DEEPSEEK_API_KEY' -in $environmentKey.GetValueNames())
-    if ($null -ne $environmentKey) { $environmentKey.Dispose() }
+    $keyPresent = -not [string]::IsNullOrWhiteSpace(
+        [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'Process')) -or
+        -not [string]::IsNullOrWhiteSpace(
+            [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User'))
     Add-Check 'deepseek_key' $(if ($keyPresent) { 'PASS' } else { 'FAIL' }) `
         $(if ($keyPresent) { 'present; value hidden' } else { 'missing; run set-deepseek-key.ps1 and restart Codex' })
 }
