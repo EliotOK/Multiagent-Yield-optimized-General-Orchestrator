@@ -137,13 +137,20 @@ try {
 
     $bindingPath = Join-Path $testProject ".codex\bindings\$taskId.json"
     $binding = Get-Content -LiteralPath $bindingPath -Raw | ConvertFrom-Json
+    $codenamePool = @($modelMap.agents.PSObject.Properties | ForEach-Object {
+        [string]$_.Value.codename } | Select-Object -Unique)
+    $taskPrefix = [string]($binding.task_name -replace '_release_smoke$', '')
     if ($binding.worker_name -ne 'luna_medium_worker' -or $binding.worker_codename -ne 'Anon' -or
-        $binding.task_label -ne 'release smoke' -or $binding.task_name -ne 'anon_release_smoke' -or
+        $binding.task_label -ne 'release smoke' -or
+        $binding.task_name -notmatch '^[a-z][a-z0-9_]*_release_smoke$' -or
+        ($codenamePool -notcontains $taskPrefix) -or
+        $binding.codename_source -ne 'random' -or
+        $binding.spawn_codename.ToLowerInvariant() -ne $taskPrefix -or
         $binding.protocol_version -ne 4 -or $binding.primary_profile -ne 'SOL' -or
         $binding.primary_model -ne 'gpt-5.6-sol' -or
         $binding.primary_reasoning_effort -ne 'high' -or
         $binding.primary_resolution_source -ne 'explicit_observation') {
-        throw 'create-task binding did not preserve the expected worker and protocol version.'
+        throw 'create-task binding did not preserve the expected worker, random codename, and protocol version.'
     }
 
     & (Join-Path $SkillRoot 'scripts\update-task-state.ps1') `
@@ -152,9 +159,72 @@ try {
         -ProjectRoot $testProject -TaskId $taskId -Outcome INTERRUPTED `
         -ConfirmWorkerStopped -Apply
     if (-not $?) { throw 'close-task smoke test failed.' }
+
+    $roleTaskOutput = & (Join-Path $SkillRoot 'scripts\create-task.ps1') `
+        -ProjectRoot $testProject -Worker luna_medium_worker `
+        -ObservedPrimaryModel 'gpt-5.6-sol' -ObservedPrimaryEffort high `
+        -TaskLabel 'release smoke' `
+        -Objective 'Release smoke test. No worker is spawned.' `
+        -AllowedFiles 'outputs/smoke.txt' -ValidationCommands 'node --version' `
+        -CodenameMode role
+    $roleId = ($roleTaskOutput | Where-Object { $_ -like 'TASK_ID=*' } | Select-Object -First 1) -replace '^TASK_ID=', ''
+    if ([string]::IsNullOrWhiteSpace($roleId)) { throw 'role-mode create-task did not return TASK_ID.' }
+    $roleBinding = Get-Content -LiteralPath (Join-Path $testProject ".codex\bindings\$roleId.json") -Raw |
+        ConvertFrom-Json
+    if ($roleBinding.task_name -ne 'anon_release_smoke' -or $roleBinding.worker_codename -ne 'Anon' -or
+        $roleBinding.spawn_codename -ne 'Anon' -or $roleBinding.codename_source -ne 'role') {
+        throw 'Role-bound codename mode did not preserve the legacy task name.'
+    }
+    & (Join-Path $SkillRoot 'scripts\update-task-state.ps1') `
+        -ProjectRoot $testProject -TaskId $roleId -NewState INTERRUPTED | Out-Null
+    & (Join-Path $SkillRoot 'scripts\close-task.ps1') `
+        -ProjectRoot $testProject -TaskId $roleId -Outcome INTERRUPTED `
+        -ConfirmWorkerStopped -Apply
+    if (-not $?) { throw 'role-mode close-task smoke test failed.' }
+
+    $codenameMapPath = Join-Path $testProject '.codex\mygo-model-map.json'
+    $originalMapText = Get-Content -LiteralPath $codenameMapPath -Raw -Encoding UTF8
+    try {
+        $hyphenMap = $originalMapText | ConvertFrom-Json
+        foreach ($entry in $hyphenMap.agents.PSObject.Properties) {
+            $entry.Value.codename = 'Ave-Mujica'
+        }
+        [IO.File]::WriteAllText($codenameMapPath, ($hyphenMap | ConvertTo-Json -Depth 12),
+            [Text.UTF8Encoding]::new($false))
+        foreach ($codenameMode in @('random', 'role')) {
+            $hyphenOutput = & (Join-Path $SkillRoot 'scripts\create-task.ps1') `
+                -ProjectRoot $testProject -Worker luna_medium_worker `
+                -ObservedPrimaryModel 'gpt-5.6-sol' -ObservedPrimaryEffort high `
+                -TaskLabel 'hyphen smoke' -Objective 'Codename normalization fixture; no worker is spawned.' `
+                -AllowedFiles 'outputs/smoke.txt' -ValidationCommands 'node --version' `
+                -CodenameMode $codenameMode
+            $hyphenId = ($hyphenOutput | Where-Object { $_ -like 'TASK_ID=*' } | Select-Object -First 1) -replace '^TASK_ID=', ''
+            if (-not $hyphenId) { throw 'Hyphen codename task was not created.' }
+            $hyphenBinding = Get-Content -LiteralPath (Join-Path $testProject ".codex\bindings\$hyphenId.json") -Raw |
+                ConvertFrom-Json
+            if ($hyphenBinding.task_name -ne 'ave_mujica_hyphen_smoke' -or
+                $hyphenBinding.worker_codename -ne 'Ave-Mujica' -or
+                $hyphenBinding.spawn_codename -ne 'Ave-Mujica' -or
+                $hyphenBinding.codename_source -ne $codenameMode -or
+                $hyphenBinding.worker_name -ne 'luna_medium_worker') {
+                throw "Hyphen codename normalization failed in $codenameMode mode."
+            }
+            & (Join-Path $SkillRoot 'scripts\update-task-state.ps1') `
+                -ProjectRoot $testProject -TaskId $hyphenId -NewState INTERRUPTED | Out-Null
+            & (Join-Path $SkillRoot 'scripts\close-task.ps1') `
+                -ProjectRoot $testProject -TaskId $hyphenId -Outcome INTERRUPTED `
+                -ConfirmWorkerStopped -Apply | Out-Null
+            if (-not $?) { throw 'Hyphen codename task archival failed.' }
+        }
+    }
+    finally {
+        [IO.File]::WriteAllText($codenameMapPath, $originalMapText, [Text.UTF8Encoding]::new($false))
+    }
+
     & git -C $testProject init --quiet
     foreach ($ignoredPath in @('.codex/research-multiagent.toml',
-            ".codex/diagnostics/task-history/$taskId/task.md")) {
+            ".codex/diagnostics/task-history/$taskId/task.md",
+            ".codex/diagnostics/task-history/$roleId/task.md")) {
         & git -C $testProject check-ignore --quiet -- $ignoredPath
         if ($LASTEXITCODE -ne 0) { throw "Generated private artifact is not gitignored: $ignoredPath" }
     }

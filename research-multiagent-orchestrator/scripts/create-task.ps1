@@ -27,7 +27,9 @@ param(
     [string]$ObservedPrimaryEffort = '',
     [int]$ExpectedMinutes = 0,
     [int]$FirstObservationSeconds = 30,
-    [string]$PreviousFailureTaskId = ''
+    [string]$PreviousFailureTaskId = '',
+    [ValidateSet('random', 'role')]
+    [string]$CodenameMode = 'random'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,6 +87,21 @@ if ($workerProvider -notin @('default', 'deepseek')) {
 }
 if ($workerCodename -notmatch '^[A-Za-z][A-Za-z0-9_-]{0,31}$') {
     throw "Invalid worker codename in MYGO model map for ${Worker}: $workerCodename"
+}
+$codenamePool = @($modelMap.agents.PSObject.Properties | ForEach-Object {
+    [string]$_.Value.codename } | Where-Object { $_ } | Select-Object -Unique)
+if ($codenamePool.Count -eq 0) { throw 'MYGO model map defines no codenames.' }
+foreach ($poolCodename in $codenamePool) {
+    if ($poolCodename -notmatch '^[A-Za-z][A-Za-z0-9_-]{0,31}$') {
+        throw "Invalid codename in MYGO model map: $poolCodename"
+    }
+}
+if ($CodenameMode -eq 'random') {
+    $spawnCodename = Get-Random -InputObject $codenamePool
+    $codenameSource = 'random'
+} else {
+    $spawnCodename = $workerCodename
+    $codenameSource = 'role'
 }
 if ($workerProvider -eq 'deepseek' -and
     $descriptorText -match '(?m)^deepseek_enabled\s*=\s*false\s*$') {
@@ -274,10 +291,10 @@ $taskLabel = if ([string]::IsNullOrWhiteSpace($TaskLabel)) {
 if ($taskLabel.Length -gt 80) {
     $taskLabel = $taskLabel.Substring(0, 80).TrimEnd()
 }
-$taskNamePrefix = $workerCodename.ToLowerInvariant()
+$taskNamePrefix = ConvertTo-TaskSlug $spawnCodename 32
 $taskSlug = ConvertTo-TaskSlug $taskLabel ([math]::Max(8, 63 - $taskNamePrefix.Length))
 $spawnTaskName = $taskNamePrefix + '_' + $taskSlug
-$taskDisplayName = $workerCodename + ' — ' + $taskLabel
+$taskDisplayName = $spawnCodename + ' — ' + $taskLabel
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $suffix = [guid]::NewGuid().ToString('N').Substring(0, 8)
@@ -305,6 +322,8 @@ Task ID: $taskId
 Status: READY
 Worker: $Worker
 Worker codename: $workerCodename
+Spawn codename: $spawnCodename
+Codename source: $codenameSource
 Task label: $taskLabel
 Mode: $mode
 Data sensitivity: $DataSensitivity
@@ -374,6 +393,8 @@ $binding = [ordered]@{
     status = 'READY'
     worker_name = $Worker
     worker_codename = $workerCodename
+    spawn_codename = $spawnCodename
+    codename_source = $codenameSource
     task_label = $taskLabel
     task_name = $spawnTaskName
     mode = $mode
@@ -441,6 +462,8 @@ Write-Output "BINDING_PATH=$bindingPath"
 Write-Output "STATE_PATH=$statePath"
 Write-Output "WORKER=$Worker"
 Write-Output "WORKER_CODENAME=$workerCodename"
+Write-Output "SPAWN_CODENAME=$spawnCodename"
+Write-Output "CODENAME_SOURCE=$codenameSource"
 Write-Output "TASK_DISPLAY_NAME=$taskDisplayName"
 Write-Output "SPAWN_TASK_NAME=$spawnTaskName"
 Write-Output "PRIMARY_PROFILE=$PrimaryProfile"

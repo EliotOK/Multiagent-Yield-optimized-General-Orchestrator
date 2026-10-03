@@ -65,10 +65,10 @@ $installMutex = [Threading.Mutex]::new($false, 'Local\MYGO_INSTALL_GLOBAL')
 $installMutexAcquired = $installMutex.WaitOne(0)
 if (-not $installMutexAcquired) { throw 'Another MYGO installation is already active for these roots.' }
 
-$environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
-$deepSeekKeyPresent = (Test-Path -LiteralPath 'Env:DEEPSEEK_API_KEY') -or
-    ($null -ne $environmentKey -and 'DEEPSEEK_API_KEY' -in $environmentKey.GetValueNames())
-if ($null -ne $environmentKey) { $environmentKey.Dispose() }
+$deepSeekKeyPresent = -not [string]::IsNullOrWhiteSpace(
+    [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'Process')) -or
+    -not [string]::IsNullOrWhiteSpace(
+        [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'User'))
 if (-not $LunaOnly -and -not $deepSeekKeyPresent -and $Apply) {
     throw 'DEEPSEEK_API_KEY is missing. No files were changed. Run scripts\set-deepseek-key.ps1 in an interactive terminal, fully restart Codex, then retry; or explicitly use -LunaOnly.'
 }
