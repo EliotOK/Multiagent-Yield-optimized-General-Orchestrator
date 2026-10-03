@@ -11,7 +11,10 @@ and integration. Do not ask the user to select a second logical primary; stop be
 dispatch when the current model is unavailable or ambiguous.
 Resolve the primary model, reasoning effort, providers, and child codenames from
 `.codex/mygo-model-map.json`. Keep stable technical roles in bindings and use the
-generated semantic `task_name` for child threads, such as `anon_schema_audit`.
+generated semantic `task_name` for child threads, such as `anon_schema_audit`; the
+create script draws the child-name prefix randomly from the map codenames by
+default, and the binding's `worker_codename` stays the stable role identity
+(`-CodenameMode role` pins the worker's own codename).
 Keep random task-ID suffixes in coordination artifacts, not visible child names.
 
 Route broad straightforward inventories, repo maps, metadata, and log reduction to

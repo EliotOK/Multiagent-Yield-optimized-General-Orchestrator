@@ -123,8 +123,11 @@ unique among child tasks in the current conversation; use a readable sequence su
 as `schema audit 2` only when needed. Supply the
 generated task ID, absolute task path, binding path, SHA-256, canonical root, and
 expected timing in the spawn message. Use a no-history fork for a custom agent.
-Use the script's ready-to-send spawn payload verbatim, including its codename-based
-semantic `task_name`, such as `anon_schema_audit`. Keep the random task-ID suffix
+Use the script's ready-to-send spawn payload verbatim, including its semantic
+`task_name`, such as `anon_schema_audit`. The child-name prefix is drawn randomly
+from all model-map codenames by default and is display-only; the binding's
+`worker_codename` remains the stable role identity. Pass `-CodenameMode role` only
+when a role-bound prefix is explicitly required. Keep the random task-ID suffix
 only in coordination artifacts; never use it as the child task name. When the
 payload contains all binding
 fields, require the worker to read task and binding together and skip descriptor

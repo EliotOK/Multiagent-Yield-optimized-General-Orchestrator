@@ -165,8 +165,12 @@ MYGO 会创建 `.codex/mygo-model-map.json`。随附默认值为
 显示代号。代号只用于子任务线程名称，不会把角色人格注入科研判断。修改 map 中的
 model、provider、reasoning effort 或 codename 后，先预览再应用：
 
-子任务名称由“角色代号 + 简短任务描述”组成，例如用户可读形式
-`Anon — schema audit`，Codex 派发接口中为 `anon_schema_audit`。随机后缀只保留在
+子任务名称由“代号前缀 + 简短任务描述”组成，例如用户可读形式
+`Anon — schema audit`，Codex 派发接口中为 `anon_schema_audit`。每次派发默认从 map
+中的全部代号随机抽取前缀，增加辨识度；绑定中的 `worker_codename` 始终保留稳定角色
+代号，实际使用的前缀记录在 `spawn_codename`，来源记录为
+`codename_source = random`。需要把前缀固定为 worker 自己的代号时，给
+`create-task.ps1` 传 `-CodenameMode role`。随机后缀只保留在
 不可变审计 ID 中，不再作为子任务显示名；同一会话出现重复描述时，使用
 `anon_schema_audit_2` 这样的可读序号。
 

@@ -42,8 +42,13 @@ the `CURRENT` primary automatically as soon as their identity is readable.
 | `sol_review_worker` | Uika |
 
 Use the stable role in bindings and routing. Give each task a concise semantic label
-and use the generated codename-based `task_name`, such as `anon_schema_audit`, when
-spawning a child. Present it to users as `Anon — schema audit`. The immutable task ID
+and use the generated `task_name`, such as `anon_schema_audit`, when
+spawning a child. Present it to users as `Anon — schema audit`. By default
+`create-task.ps1` draws the child-name prefix randomly from every codename in the
+map (`-CodenameMode random`); the binding's `worker_codename` keeps the stable role
+codename for audit, while `spawn_codename` and `codename_source` record the drawn
+prefix and its mode. Pass `-CodenameMode role` to pin the prefix to the worker's
+own codename. The immutable task ID
 retains its random collision-resistant suffix, but the visible child name does not.
 
 ## Change a model binding

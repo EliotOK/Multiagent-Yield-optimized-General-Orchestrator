@@ -164,9 +164,13 @@ MyGO!!!!! and Ave Mujica. Codenames label child threads only; they do not inject
 fictional personality into scientific work. Edit the map to change a node's model,
 provider, effort, or codename, then preview and apply:
 
-Child names combine the codename with a concise task description—for example,
+Child names combine a codename prefix with a concise task description—for example,
 `Anon — schema audit` in user-facing text and `anon_schema_audit` in the Codex
-dispatch API. Random suffixes remain only in immutable audit IDs and are not shown
+dispatch API. Each spawn draws the prefix randomly from every codename in the map
+for variety; the binding keeps the stable role codename in `worker_codename` and
+records the drawn prefix in `spawn_codename` with `codename_source = random`. Pass
+`-CodenameMode role` to `create-task.ps1` to pin the prefix to the worker's own
+codename. Random suffixes remain only in immutable audit IDs and are not shown
 as child names. Repeated descriptions use readable numbering such as
 `anon_schema_audit_2`.
 

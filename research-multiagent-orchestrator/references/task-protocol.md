@@ -31,11 +31,16 @@ output-received, and agent-completed times without adding acknowledgement turns.
 ## Binding rules
 
 Bind a worker to the task ID, canonical root, absolute task path, stable worker role,
-display codename, concise task label, current-session primary profile, observed
+stable role codename, child-name codename, codename source, concise task label,
+current-session primary profile, observed
 primary model and reasoning effort, resolution source, and task SHA-256.
 Put every field in the spawn message. Use a semantic child name in the form
 `codename_task_description`, such as `anon_schema_audit`, while keeping the stable
-worker role for routing and audit. The child API accepts lowercase letters, numbers,
+worker role for routing and audit. The child-name prefix is drawn randomly from all
+model-map codenames by default; the binding's `worker_codename` keeps the stable
+role codename, and `spawn_codename` plus `codename_source` (`random` or `role`)
+record the actual prefix. `-CodenameMode role` pins the prefix to the worker's own
+codename. The child API accepts lowercase letters, numbers,
 and underscores, so the script normalizes the human-readable display form
 `Anon — schema audit`. Keep the random task-ID suffix out of the child name. If a
 semantic name already exists in the conversation, choose a readable numbered label
