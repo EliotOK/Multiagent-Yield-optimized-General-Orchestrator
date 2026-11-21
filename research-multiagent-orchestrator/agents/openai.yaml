@@ -1,4 +1,4 @@
 interface:
-  display_name: "MYGO — Multi-Agent Orchestrator"
-  short_description: "Current-model scientific multi-agent workflow with configurable workers"
-  default_prompt: "Use $research-multiagent-orchestrator. Resolve the active composer model through the project model map, then route and supervise the scientific coding task with that current model as the sole final authority."
+  display_name: "MYGO — Multi-Model Orchestrator"
+  short_description: "Delegate research, coding, writing, and review"
+  default_prompt: "Use $research-multiagent-orchestrator to divide this task, verify the workers' results, and integrate them in the current Codex chat."

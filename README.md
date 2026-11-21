@@ -4,19 +4,39 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Windows-first Codex skill for scientific coding projects. Before each delegation,
-MYGO uses the active composer model as the sole primary. Known models receive an
-Astra or Sol alias; new or unmapped models use the neutral `CURRENT` profile, then
-routes bounded work across DeepSeek V4.1 Flash (`deepseek-flash`) long-context
-workers and tiered Luna coding workers.
+MYGO is a Codex skill for multi-model collaboration and scientific coding. The
+current Codex chat keeps control of the task, review, and acceptance. It can
+delegate evidence gathering to DeepSeek Flash (`deepseek-flash`), code candidates
+to GLM-5.3-Flash, scoped writes to Luna, design and review to Kimi, and writing
+or visual feedback to Gemini.
 
 The distributable Codex skill keeps the descriptive internal name
 `research-multiagent-orchestrator` so its purpose and trigger remain explicit.
 
-> Status: `v0.1.0-beta.4` release candidate. This is an unofficial community
-> project and is not affiliated with or endorsed by OpenAI or DeepSeek.
+> The existing PowerShell release remains tagged `v0.1.0-beta.4`. MYGO is an
+> unofficial community project.
+
+## Magpie V2 and direct API
+
+Install the `research-multiagent-orchestrator` folder as a Codex skill. For native
+external children, configure Magpie with your chosen providers, then follow the
+[V2 setup and acceptance criteria](research-multiagent-orchestrator/references/model-routing.md#native-v2-through-magpie).
+The local Desktop test resumed an existing V2 chat with Sol and ran DeepSeek,
+Kimi, GLM-5.3-Flash, and Gemini as four native children. Each actual vendor route
+returned HTTP 200. The test also completed a log search, design question,
+validated code draft, and copy revision.
+
+Use `$research-multiagent-orchestrator` in your Codex chat and specify the task and
+the context approved for each external provider. If the current chat sends a
+sealed task or cannot start native external children, the bundled Python 3 helper
+can call the four official APIs with your own environment variables. See
+[direct API usage](research-multiagent-orchestrator/references/model-routing.md#direct-vendor-api).
+Install Magpie and set its Codex routing separately from MYGO.
 
 ## What it does
+
+The rest of this section and the PowerShell installer describe the existing
+project workflow with a model map and persisted task records.
 
 Exactly one current-session primary retains task interpretation, scientific decisions,
 architecture, worker dispatch, acceptance criteria, final review, and validation
@@ -50,9 +70,8 @@ fallback rules, and PowerShell utilities for Windows.
 
 - Codex Desktop or Codex CLI with custom subagents enabled.
 - Windows PowerShell 5.1+ or PowerShell 7+.
-- No Node.js or Python runtime is required for installation. Python 3.11+ is used
-  only by the release validation suite; install R, Python, Node.js, GIS tools, or
-  Git only when the delegated project tasks need them.
+- The PowerShell installer requires neither Node.js nor Python. The direct API
+  helper uses Python 3, and the release validation suite uses Python 3.11+.
 - A DeepSeek API key in `DEEPSEEK_API_KEY` only when using DeepSeek workers. Never
   put the key in project files, prompts, task files, or this repository.
 - Access to the selected Luna models for Luna workers; model availability depends on

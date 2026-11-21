@@ -16,13 +16,14 @@ foreach ($relative in @('README.md', 'README.zh-CN.md')) {
 }
 
 foreach ($relative in @(
-    'SKILL.md', 'agents\openai.yaml', 'scripts\install-workflow.ps1',
+    'SKILL.md', 'agents\openai.yaml', 'scripts\install-workflow.ps1', 'scripts\consult.py',
     'scripts\set-deepseek-key.ps1',
     'scripts\configure-model-map.ps1',
     'scripts\resolve-primary-profile.ps1',
     'scripts\update-task-state.ps1',
     'scripts\create-task.ps1', 'scripts\close-task.ps1',
     'references\primary-profiles.md', 'references\model-map.md',
+    'references\model-routing.md', 'references\legacy-workflow.md',
     'assets\project\mygo-model-map.json',
     'assets\agents\deepseek-context-worker.toml',
     'assets\agents\deepseek-context-reasoning-worker.toml',
@@ -69,6 +70,9 @@ if ($parseErrors.Count -gt 0) {
 
 python -c "import pathlib,tomllib; root=pathlib.Path(r'$SkillRoot'); [tomllib.loads(p.read_text(encoding='utf-8')) for p in root.rglob('*.toml')]; print('TOML_PARSE=PASS')"
 if ($LASTEXITCODE -ne 0) { throw 'TOML parser validation failed.' }
+
+python -B -m unittest discover -s (Join-Path $RepositoryRoot 'tests') -p 'test_consult.py'
+if ($LASTEXITCODE -ne 0) { throw 'Direct vendor API regression tests failed.' }
 
 $textFiles = Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -File | Where-Object {
     $_.FullName -notmatch '[\\/]\.git[\\/]' -and

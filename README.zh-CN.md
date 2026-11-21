@@ -4,19 +4,32 @@
 
 简体中文 | [English](README.md)
 
-MYGO 是一个面向科研编程项目、优先支持 Windows 的 Codex skill。每次委派前，
-它把当前会话模型作为唯一主控；已知模型可获得 Astra 或 Sol 别名，新模型或未登记模型
-使用中性的 `CURRENT` profile。随后把长上下文任务交给
-DeepSeek V4.1 Flash（正式模型 ID：`deepseek-flash`），并按难度把收敛的编码任务
-交给 Luna medium、high 或 max。
+MYGO 是面向多模型协作和科研编程的 Codex skill。当前聊天的主 Agent 负责分工、
+审核与验收。默认由 DeepSeek Flash（`deepseek-flash`）收集证据，
+GLM-5.3-Flash 构建候选实现，Luna 完成实际改动，Kimi 设计或审核方案，Gemini 负责
+写作或视觉反馈。
 
 发布用 skill 保留内部名称 `research-multiagent-orchestrator`，以便 Codex 能够
 明确识别它的用途和触发条件。
 
-> 当前状态：`v0.1.0-beta.4`。这是非官方社区项目，与 OpenAI 或 DeepSeek
-> 不存在隶属或背书关系。
+> 现有 PowerShell 版本保留 `v0.1.0-beta.4` 标签。MYGO 是非官方社区项目。
+
+## Magpie V2 与官方 API 直连
+
+将 `research-multiagent-orchestrator` 目录安装为 Codex skill。要用外部原生子代理，
+请先在 Magpie 接入供应商，再按 [V2 配置与验收说明](research-multiagent-orchestrator/references/model-routing.md#native-v2-through-magpie)
+检查当前 Codex 聊天。Windows Desktop 实测在重开的同一条 V2 聊天中由 Sol 派出
+DeepSeek、Kimi、GLM-5.3-Flash 和 Gemini 四个原生子线程。厂商路由均返回 HTTP 200，
+后续也通过了日志搜索、方案判断、代码验收和文案修订。
+
+在当前 Codex 聊天调用 `$research-multiagent-orchestrator`，说明任务及可发给对应厂商
+的材料范围。当前聊天发出封装任务或无法原生派发时，可用随附的 Python 3 工具和本机
+环境变量 [直连各家官方 API](research-multiagent-orchestrator/references/model-routing.md#direct-vendor-api)。
+Magpie 的安装和 Codex 路由由使用者单独配置。
 
 ## 工作方式
+
+下面的角色表和 PowerShell 安装流程适用于保留模型映射和任务记录的原有项目工作流。
 
 当前会话模型是唯一主 Agent，独占任务理解、科研判断、架构、worker 派发、
 验收标准、最终代码审核和独立验证权。另一旗舰模型只能做有限的只读交叉复核，
@@ -49,8 +62,8 @@ PowerShell 辅助脚本。
 
 - 支持自定义 subagent 的 Codex Desktop 或 Codex CLI；
 - Windows PowerShell 5.1+ 或 PowerShell 7+；
-- 安装本身不需要 Node.js 或 Python；只有发布验证需要 Python 3.11+。R、Python、
-  Node.js、GIS 工具和 Git 仅在具体委派任务需要时安装；
+- PowerShell 安装器无需 Node.js 或 Python。直连工具使用 Python 3，发布验证使用
+  Python 3.11+；
 - 只有使用 DeepSeek worker 时才需要环境变量 `DEEPSEEK_API_KEY`；
 - Luna worker 需要当前 Codex 账户能够使用相应模型。
 
