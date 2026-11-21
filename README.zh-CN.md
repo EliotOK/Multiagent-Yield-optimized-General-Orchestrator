@@ -22,22 +22,26 @@ codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestr
 codex plugin add mygo@mygo
 ```
 
-重启 Codex，打开 **MYGO 设置**，按下面的顺序完成配置：
+重启 Codex。支持插件应用入口的桌面客户端可通过
+`codex://plugins/mygo@mygo/app/show_settings` 打开 **MYGO 设置**。
+支持结构化设置的插件详情页会提供“打开 MYGO 设置”。Codex 的“配置”按钮会进入聊天引导。
+也可以在当前聊天发送 `$mygo 打开 MYGO 设置`。面板内按以下顺序配置。
 
 1. 先查看各供应商状态。MYGO 会检测 Magpie 和对应的本机环境变量。只对缺少
    密钥的供应商选择“从环境变量导入”或“打开密码窗口”。本机密码窗口通过
    标准输入把值交给 Magpie。MCP 参数、聊天、日志和分工文件不携带密钥。
 2. 修改每个角色的显示名称、模型 ID、默认职责和推理强度，然后保存。设置位于
    `~/.codex/mygo/preferences.json`，内置 skill 会在每次派发前读取。
-3. 点击“配置原生 V2”。MYGO 使用已安装的兼容 Magpie，或者下载官方 CLI 并
+3. 点击“安装或修复原生 V2 配置”。MYGO 使用已安装的兼容 Magpie，或者下载官方 CLI 并
    核对发布方 SHA-256，然后选择模型并更新 Codex V2 配置。写入前备份 Codex
    文件。配置失败会恢复这些文件和 Magpie 的供应商模型选择。
 4. 彻底重启 Codex，重开原聊天，派发一个小任务，同时确认原生子线程和实际
    供应商路由。插件安装和配置写入成功不等于厂商已接受模型请求。
 
 DeepSeek、Kimi、GLM 和 Gemini 分别读取 `DEEPSEEK_API_KEY`、
-`MOONSHOT_API_KEY`、`ZAI_API_KEY` 和 `GEMINI_API_KEY`。导入 GLM 前先选择
-Coding Plan 或开放平台。密钥由 Magpie 保存在其本机配置中，这里并非加密的
+`MOONSHOT_API_KEY`、`ZAI_API_KEY` 和 `GEMINI_API_KEY`。首次导入 GLM 时，在
+GLM 一行选择 Coding Plan 或开放平台，Magpie 会使用对应的 API 入口。密钥由
+Magpie 保存在其本机配置中，这里并非加密的
 密码保险库。共用电脑应检查本机配置文件的访问权限。
 
 交互导入和自动下载 CLI 目前面向 Windows x64。其他平台请用 Magpie 自身界面

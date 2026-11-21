@@ -18,10 +18,10 @@ URI = "ui://mygo/settings.html"
 MIME = "text/html;profile=mcp-app"
 
 
-def definition(name, description, properties=None, required=(), app=False, panel=False, mutating=False):
+def definition(name, description, properties=None, required=(), app=False, panel=False, mutating=False, title=None):
     result = {
         "name": name,
-        "title": description.split(".")[0],
+        "title": title or description.split(".")[0],
         "description": description,
         "inputSchema": {"type": "object", "properties": properties or {}, "required": list(required), "additionalProperties": False},
         "annotations": {"readOnlyHint": not mutating, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
@@ -52,7 +52,7 @@ PROVIDER_PROPS = {
     "glm_plan": {"type": "string", "enum": ["coding", "api"]},
 }
 TOOLS = [
-    definition("show_settings", "Open MYGO settings", panel=True),
+    definition("show_settings", "Open MYGO settings", panel=True, title="打开 MYGO 设置"),
     definition("read_settings", "Read secret-free MYGO provider readiness and role preferences", app=True),
     definition("import_credential", "Import a provider credential in a local password window. No secret is passed to this tool", PROVIDER_PROPS, ["provider", "source"], app=True, mutating=True),
     definition("configure_native", "Install a compatible Magpie CLI if needed and enable native V2 subagents", app=True, mutating=True),
@@ -67,9 +67,13 @@ for tool in TOOLS:
         tool["outputSchema"] = {"type": "object", "properties": {"values": {"type": "object"}}, "required": ["values"]}
 
 
-def setting_schema():
-    properties, values, groups = {}, {}, []
-    preferences = load_roles(Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "mygo" / "preferences.json")
+def setting_schema(preferences):
+    properties, values = {}, {}
+    groups = [{
+        "kind": "group",
+        "title": "本机配置",
+        "items": [{"kind": "tool", "tool": "show_settings"}],
+    }]
     for key, role in preferences["roles"].items():
         prefix = f"{key}."
         for field, title in (("label", "Display name"), ("model", "Magpie model ID"), ("responsibility", "Default responsibility"), ("effort", "Reasoning effort")):
@@ -80,7 +84,6 @@ def setting_schema():
                 properties[prefix + field]["pattern"] = MODEL_PATTERN.pattern
             values[prefix + field] = role[field]
         groups.append({"kind": "group", "title": f"{key} · {role['label']}", "items": [{"kind": "property", "property": prefix + field} for field in ("label", "model", "responsibility", "effort")]})
-    groups.append({"kind": "group", "title": "Local setup", "items": [{"kind": "tool", "tool": "show_settings", "description": "Check provider credentials and configure Magpie V2."}]})
     return {"schema": {"type": "object", "properties": properties, "required": list(properties)}, "values": values, "layout": groups}
 
 
@@ -138,7 +141,7 @@ class Server:
         if name == "read_settings":
             return self.read()
         if name == "settings.read":
-            return setting_schema()
+            return setting_schema(load_roles(self.home / "mygo" / "preferences.json"))
         if name == "settings.update":
             preferences = load_roles(self.home / "mygo" / "preferences.json")
             changes = args["set"]
@@ -151,8 +154,7 @@ class Server:
                 if not isinstance(value, str):
                     raise ValueError("MYGO settings must be text values.")
                 preferences["roles"][role][attribute] = value
-            save_roles(self.home / "mygo" / "preferences.json", preferences)
-            return setting_schema()
+            return setting_schema(save_roles(self.home / "mygo" / "preferences.json", preferences))
         if name == "save_roles":
             with self.setup_lock:
                 return {"saved": True, "preferences": save_roles(self.home / "mygo" / "preferences.json", args["preferences"])}
@@ -182,7 +184,7 @@ class Server:
                 result = {
                     "protocolVersion": version if version in ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25") else "2025-06-18",
                     "capabilities": {"tools": {}, "resources": {}, "experimental": {"openai/settings": {"readTool": "settings.read", "updateTool": "settings.update"}}},
-                    "serverInfo": {"name": "mygo", "version": "0.2.0"},
+                    "serverInfo": {"name": "mygo", "version": "0.2.1"},
                     "instructions": "Use show_settings for local setup. Never request, accept, or return API keys. Provider import tools accept only a provider name and source. Role preferences contain no credentials.",
                 }
             elif method == "ping":

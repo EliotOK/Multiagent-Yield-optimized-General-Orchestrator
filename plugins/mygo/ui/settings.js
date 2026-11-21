@@ -20,10 +20,19 @@ function rpc(method, params = {}) {
   });
 }
 
+function updateTheme(theme) {
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+}
+
 window.addEventListener("message", (event) => {
   if (event.source !== window.parent) return;
   const message = event.data;
-  if (!message || message.jsonrpc !== "2.0" || typeof message.id !== "number") return;
+  if (message?.jsonrpc !== "2.0") return;
+  if (message.method === "ui/notifications/host-context-changed") {
+    updateTheme(message.params?.theme);
+    return;
+  }
+  if (typeof message.id !== "number") return;
   const request = pending.get(message.id);
   if (!request) return;
   pending.delete(message.id);
@@ -61,6 +70,7 @@ function element(tag, className, text) {
 
 function renderProviders() {
   const container = byId("providers");
+  const glmPlan = byId("glm-plan")?.value;
   container.replaceChildren();
   const entries = Object.entries(state.credentials || {});
   const ready = entries.filter(([, provider]) => provider.configured).length;
@@ -71,6 +81,11 @@ function renderProviders() {
     const statusText = provider.configured ? "Magpie 已配置" : provider.environment ? "检测到本机环境变量" : "尚未检测到密钥";
     row.appendChild(element("span", `provider-state${provider.configured ? " ready" : ""}`, statusText));
     if (!provider.configured) {
+      if (name === "glm") {
+        const planField = byId("glm-plan-field").content.cloneNode(true);
+        if (glmPlan) planField.querySelector("select").value = glmPlan;
+        row.appendChild(planField);
+      }
       const actions = element("div", "provider-actions");
       if (provider.environment) {
         const envButton = element("button", "secondary", "从环境变量导入");
@@ -96,11 +111,9 @@ function renderProviders() {
 async function importCredential(provider, source, button) {
   button.disabled = true;
   try {
-    const result = await callTool("import_credential", {
-      provider,
-      source,
-      glm_plan: byId("glm-plan").value,
-    });
+    const args = { provider, source };
+    if (provider === "glm") args.glm_plan = byId("glm-plan").value;
+    const result = await callTool("import_credential", args);
     report(result.message || "这家供应商已在 Magpie 中配置。请刷新状态。");
   } catch (error) {
     report(error.message, true);
@@ -205,12 +218,12 @@ byId("configure").addEventListener("click", async (event) => {
 });
 
 bridgeReady = rpc("ui/initialize", {
-  appInfo: { name: "mygo-settings", version: "0.2.0" },
+  appInfo: { name: "mygo-settings", version: "0.2.1" },
   appCapabilities: {},
   protocolVersion: "2026-01-26",
 }).then((result) => {
+  updateTheme(result?.hostContext?.theme);
   notify("ui/notifications/initialized", {});
-  if (result?.hostContext?.theme) document.documentElement.dataset.theme = result.hostContext.theme;
   return result;
 });
 

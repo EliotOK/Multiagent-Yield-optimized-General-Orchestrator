@@ -24,7 +24,11 @@ codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestr
 codex plugin add mygo@mygo
 ```
 
-Restart Codex, open **MYGO settings**, and use the following guided setup:
+Restart Codex. On desktop clients that support plugin app entrypoints, open
+**MYGO settings** with `codex://plugins/mygo@mygo/app/show_settings`.
+Plugin details pages that support structured settings offer an **打开 MYGO 设置**
+action. The Codex **Configure** button starts setup in a chat. You can also send
+`$mygo open MYGO settings` in the current chat. Complete setup in the panel.
 
 1. Review each provider's status. MYGO first checks Magpie and the corresponding
    local environment variable. Select **Import from environment** or **Open password
@@ -44,8 +48,8 @@ Restart Codex, open **MYGO settings**, and use the following guided setup:
    config do not by themselves prove that a provider accepted a request.
 
 DeepSeek, Kimi, GLM, and Gemini use `DEEPSEEK_API_KEY`, `MOONSHOT_API_KEY`,
-`ZAI_API_KEY`, and `GEMINI_API_KEY`, respectively. Select the appropriate GLM
-Coding Plan or open-platform route before importing that provider. Magpie stores
+`ZAI_API_KEY`, and `GEMINI_API_KEY`, respectively. On first import, choose the
+Coding Plan or open-platform API in the GLM row. Magpie stores
 provider keys in its own local configuration. That storage is not an encrypted
 secret vault. Review the local configuration permissions on a shared device.
 

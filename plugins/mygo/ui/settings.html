@@ -16,7 +16,17 @@
     <section>
       <div class="section-heading"><div><h2>模型接入</h2><p>先检查 Magpie 和本机环境变量，缺少时再主动导入。</p></div><span id="ready-count" class="status-pill">检测中</span></div>
       <div id="providers" class="provider-list"></div>
-      <label class="plan-row">GLM 接入方式<select id="glm-plan"><option value="coding">GLM Coding Plan</option><option value="api">智谱开放平台</option></select></label>
+      <template id="glm-plan-field">
+        <div class="provider-plan">
+          <label class="plan-row">GLM 接入方式
+            <select id="glm-plan" aria-describedby="glm-plan-help">
+              <option value="coding">GLM Coding Plan 套餐</option>
+              <option value="api">智谱开放平台 API</option>
+            </select>
+          </label>
+          <p id="glm-plan-help">按你的账户类型选择，Magpie 会使用对应的 API 入口。</p>
+        </div>
+      </template>
       <p class="fine-print">密钥在本机密码窗口输入，经标准输入交给 Magpie。插件工具、聊天和分工配置均不接收密钥。完成导入后点击右上角刷新。</p>
     </section>
     <section>

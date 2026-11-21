@@ -103,7 +103,12 @@ class ManifestAndProtocolTests(IsolatedCase):
         instance.magpie = FakeMagpie()
         initialized = instance.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
         self.assertEqual(initialized["result"]["serverInfo"]["name"], "mygo")
-        resource = instance.handle({"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": mygo_server.URI}})
+        self.assertEqual(initialized["result"]["capabilities"]["experimental"]["openai/settings"]["readTool"], "settings.read")
+        listed = instance.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        panel = next(tool for tool in listed["result"]["tools"] if tool["name"] == "show_settings")
+        self.assertEqual(panel["_meta"]["ui"]["resourceUri"], mygo_server.URI)
+        self.assertIn({"type": "global"}, panel["_meta"]["openai/ui"]["entrypoints"])
+        resource = instance.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": mygo_server.URI}})
         html = resource["result"]["contents"][0]["text"]
         self.assertIn("ui/initialize", html)
         self.assertIn("import_credential", html)
@@ -134,6 +139,7 @@ class ManifestAndProtocolTests(IsolatedCase):
     def test_structured_settings_and_role_preferences(self):
         instance = mygo_server.Server(self.home)
         initial = instance.call("settings.read", {})
+        self.assertIn({"kind": "tool", "tool": "show_settings"}, initial["layout"][0]["items"])
         self.assertEqual(initial["values"]["researcher.model"], "deepseek/deepseek-flash")
         updated = instance.call("settings.update", {"set": {
             "researcher.label": "Research",
