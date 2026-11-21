@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "roles": {
+    "researcher": {
+      "label": "DeepSeek",
+      "model": "deepseek/deepseek-flash",
+      "responsibility": "搜索日志、盘点项目上下文、检索公开资料，返回证据位置和来源链接",
+      "effort": "low"
+    },
+    "builder": {
+      "label": "GLM",
+      "model": "zhipu/glm-5.3-flash",
+      "responsibility": "构建代码、补丁草案和测试用例，说明实现依据",
+      "effort": "medium"
+    },
+    "reviewer": {
+      "label": "Kimi",
+      "model": "moonshot-cn/kimi-k3.1-pro",
+      "responsibility": "设计和比较方案，审查实现，指出风险和证据缺口",
+      "effort": "medium"
+    },
+    "writer": {
+      "label": "Gemini",
+      "model": "google/gemini-3.1-flash-lite",
+      "responsibility": "写作、文案和视觉反馈，按需要提供独立视角",
+      "effort": "low"
+    },
+    "executor": {
+      "label": "Luna",
+      "model": "gpt-6-luna",
+      "responsibility": "在明确范围内执行文件修改和约定的验证命令",
+      "effort": "medium"
+    }
+  }
+}

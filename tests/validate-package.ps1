@@ -6,7 +6,16 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
     $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 }
 $RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\')
-$SkillRoot = Join-Path $RepositoryRoot 'research-multiagent-orchestrator'
+$SkillRoot = Join-Path $RepositoryRoot 'mygo'
+$PluginSkillRoot = Join-Path $RepositoryRoot 'plugins\mygo\skills\mygo'
+foreach ($legacySkillRoot in @(
+    (Join-Path $RepositoryRoot 'research-multiagent-orchestrator'),
+    (Join-Path $RepositoryRoot 'plugins\mygo\skills\research-multiagent-orchestrator')
+)) {
+    if (Test-Path -LiteralPath $legacySkillRoot) {
+        throw "Legacy skill directory must not coexist with mygo: $legacySkillRoot"
+    }
+}
 
 foreach ($relative in @('README.md', 'README.zh-CN.md')) {
     $path = Join-Path $RepositoryRoot $relative
@@ -42,9 +51,34 @@ foreach ($relative in @(
     }
 }
 
-$skillText = Get-Content -LiteralPath (Join-Path $SkillRoot 'SKILL.md') -Raw -Encoding UTF8
-if ($skillText -notmatch '(?s)^---\s*\r?\nname:\s*research-multiagent-orchestrator\s*\r?\ndescription:\s*.+?\r?\n---') {
-    throw 'SKILL.md frontmatter is missing the expected name and description.'
+foreach ($skill in @($SkillRoot, $PluginSkillRoot)) {
+    $skillText = Get-Content -LiteralPath (Join-Path $skill 'SKILL.md') -Raw -Encoding UTF8
+    if ($skillText -notmatch '(?s)^---\s*\r?\nname:\s*mygo\s*\r?\ndescription:\s*.+?\r?\n---') {
+        throw "SKILL.md frontmatter is missing the expected mygo name and description: $skill"
+    }
+    $agentManifest = Get-Content -LiteralPath (Join-Path $skill 'agents\openai.yaml') -Raw -Encoding UTF8
+    if ($agentManifest -notmatch '(?m)^\s*default_prompt:\s*".*\$mygo\b.*"\s*$') {
+        throw "agents/openai.yaml does not invoke the mygo skill: $skill"
+    }
+}
+
+$sourceFiles = @(Get-ChildItem -LiteralPath $SkillRoot -Recurse -File | ForEach-Object {
+    [pscustomobject]@{
+        RelativePath = $_.FullName.Substring($SkillRoot.Length + 1)
+        Hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+    }
+})
+$pluginFiles = @(Get-ChildItem -LiteralPath $PluginSkillRoot -Recurse -File | ForEach-Object {
+    [pscustomobject]@{
+        RelativePath = $_.FullName.Substring($PluginSkillRoot.Length + 1)
+        Hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+    }
+})
+$copyDifferences = @(Compare-Object -ReferenceObject $sourceFiles -DifferenceObject $pluginFiles `
+    -Property RelativePath, Hash)
+if ($copyDifferences.Count -gt 0) {
+    $copyDifferences | Format-Table -AutoSize | Out-String | Write-Error
+    throw 'The root and plugin skill copies differ.'
 }
 
 foreach ($workerFile in @('deepseek-batch-worker.toml', 'luna-medium-worker.toml',
@@ -74,6 +108,9 @@ if ($LASTEXITCODE -ne 0) { throw 'TOML parser validation failed.' }
 python -B -m unittest discover -s (Join-Path $RepositoryRoot 'tests') -p 'test_consult.py'
 if ($LASTEXITCODE -ne 0) { throw 'Direct vendor API regression tests failed.' }
 
+python -B -m unittest discover -s (Join-Path $RepositoryRoot 'tests') -p 'test_plugin.py'
+if ($LASTEXITCODE -ne 0) { throw 'Plugin and native V2 setup regression tests failed.' }
+
 $textFiles = Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -File | Where-Object {
     $_.FullName -notmatch '[\\/]\.git[\\/]' -and
     $_.FullName -ne $PSCommandPath -and
@@ -90,7 +127,8 @@ $englishReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.md'
 $chineseReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.zh-CN.md') -Raw -Encoding UTF8
 foreach ($requiredText in @('v0.1.0-beta.4', 'ProjectOnly', 'LunaOnly',
         'security-regression.ps1', 'APPROVED_EXTERNAL', 'terra_readonly_fallback_worker',
-        'MYGO', 'Astra primary', 'Sol primary', 'deepseek-flash')) {
+        'MYGO', 'Astra primary', 'Sol primary', 'deepseek-flash', 'codex plugin marketplace add',
+        'codex plugin add mygo@mygo')) {
     if ($englishReadme -notmatch [regex]::Escape($requiredText) -or
         $chineseReadme -notmatch [regex]::Escape($requiredText)) {
         throw "Bilingual documentation parity check failed for: $requiredText"

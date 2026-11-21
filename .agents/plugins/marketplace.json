@@ -1,0 +1,20 @@
+{
+  "name": "mygo",
+  "interface": {
+    "displayName": "MYGO"
+  },
+  "plugins": [
+    {
+      "name": "mygo",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mygo"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MYGO 设置</title>
+  <style>/* SETTINGS_CSS */</style>
+</head>
+<body>
+  <header>
+    <div><p class="eyebrow">MULTI-MODEL WORKSPACE</p><h1>MYGO</h1><p class="intro">在同一个 Codex 聊天中组织不同模型。</p></div>
+    <button id="refresh" class="icon-button" title="刷新状态" aria-label="刷新状态">↻</button>
+  </header>
+  <div id="notice" class="notice" hidden></div>
+  <main>
+    <section>
+      <div class="section-heading"><div><h2>模型接入</h2><p>先检查 Magpie 和本机环境变量，缺少时再主动导入。</p></div><span id="ready-count" class="status-pill">检测中</span></div>
+      <div id="providers" class="provider-list"></div>
+      <label class="plan-row">GLM 接入方式<select id="glm-plan"><option value="coding">GLM Coding Plan</option><option value="api">智谱开放平台</option></select></label>
+      <p class="fine-print">密钥在本机密码窗口输入，经标准输入交给 Magpie。插件工具、聊天和分工配置均不接收密钥。完成导入后点击右上角刷新。</p>
+    </section>
+    <section>
+      <div class="section-heading"><div><h2>原生子代理</h2><p>通过 Magpie 在当前聊天使用不同厂商的模型。</p></div><span id="v2-status" class="status-pill">未配置</span></div>
+      <div id="setup-details" class="setup-details"></div>
+      <button id="configure" class="primary full">安装或修复原生 V2 配置</button>
+      <p class="fine-print">下载 Magpie 官方 CLI 并核对 SHA-256，配置前备份 Codex 文件。完成后彻底重启 Codex，再重开原聊天进行实际派发验收。Windows 首次导入会打开独立密码窗口。</p>
+    </section>
+    <section>
+      <div class="section-heading"><div><h2>默认分工</h2><p>主 Agent 可以按任务调整，不必机械地调用所有角色。</p></div></div>
+      <div id="roles" class="role-list"></div>
+      <button id="save-roles" class="primary full">保存分工预设</button>
+      <p id="preferences-path" class="fine-print path"></p>
+    </section>
+  </main>
+  <script>/* SETTINGS_JS */</script>
+</body>
+</html>

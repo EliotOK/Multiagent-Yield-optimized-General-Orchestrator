@@ -6,8 +6,8 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
     $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 }
 $RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd('\')
-$SkillRoot = Join-Path $RepositoryRoot 'research-multiagent-orchestrator'
-$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('rmo-release-smoke-' + [guid]::NewGuid().ToString('N'))
+$SkillRoot = Join-Path $RepositoryRoot 'mygo'
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('mygo-release-smoke-' + [guid]::NewGuid().ToString('N'))
 $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
 
 try {
@@ -134,6 +134,9 @@ try {
         -AllowedFiles 'outputs/smoke.txt' -ValidationCommands 'node --version'
     $taskId = ($taskOutput | Where-Object { $_ -like 'TASK_ID=*' } | Select-Object -First 1) -replace '^TASK_ID=', ''
     if ([string]::IsNullOrWhiteSpace($taskId)) { throw 'create-task did not return TASK_ID.' }
+    if ($taskId -notmatch '^mygo-[0-9]{8}-[0-9]{6}-[0-9a-f]{8}$') {
+        throw "create-task did not use the mygo ID prefix: $taskId"
+    }
 
     $bindingPath = Join-Path $testProject ".codex\bindings\$taskId.json"
     $binding = Get-Content -LiteralPath $bindingPath -Raw | ConvertFrom-Json
@@ -222,7 +225,7 @@ try {
     }
 
     & git -C $testProject init --quiet
-    foreach ($ignoredPath in @('.codex/research-multiagent.toml',
+    foreach ($ignoredPath in @('.codex/mygo.toml', '.codex/research-multiagent.toml',
             ".codex/diagnostics/task-history/$taskId/task.md",
             ".codex/diagnostics/task-history/$roleId/task.md")) {
         & git -C $testProject check-ignore --quiet -- $ignoredPath

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 
 
-SCRIPT = (Path(__file__).resolve().parents[1] / "research-multiagent-orchestrator"
+SCRIPT = (Path(__file__).resolve().parents[1] / "mygo"
           / "scripts" / "consult.py")
 spec = importlib.util.spec_from_file_location("mygo_consult", SCRIPT)
 consult = importlib.util.module_from_spec(spec)

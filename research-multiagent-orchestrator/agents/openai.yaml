@@ -1,4 +1,0 @@
-interface:
-  display_name: "MYGO — Multi-Model Orchestrator"
-  short_description: "Delegate research, coding, writing, and review"
-  default_prompt: "Use $research-multiagent-orchestrator to divide this task, verify the workers' results, and integrate them in the current Codex chat."

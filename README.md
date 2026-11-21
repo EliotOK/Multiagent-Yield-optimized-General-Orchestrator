@@ -4,34 +4,71 @@
 
 [简体中文](README.zh-CN.md) | English
 
-MYGO is a Codex skill for multi-model collaboration and scientific coding. The
+MYGO is a Codex plugin with a bundled skill for multi-model collaboration and scientific coding. The
 current Codex chat keeps control of the task, review, and acceptance. It can
 delegate evidence gathering to DeepSeek Flash (`deepseek-flash`), code candidates
 to GLM-5.3-Flash, scoped writes to Luna, design and review to Kimi, and writing
 or visual feedback to Gemini.
 
-The distributable Codex skill keeps the descriptive internal name
-`research-multiagent-orchestrator` so its purpose and trigger remain explicit.
+The bundled Codex skill uses the concise name `mygo`.
 
 > The existing PowerShell release remains tagged `v0.1.0-beta.4`. MYGO is an
 > unofficial community project.
 
+## Install the plugin
+
+Install Python 3.11 or newer and a current Codex Desktop release on Windows x64. Then run:
+
+```powershell
+codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestrator
+codex plugin add mygo@mygo
+```
+
+Restart Codex, open **MYGO settings**, and use the following guided setup:
+
+1. Review each provider's status. MYGO first checks Magpie and the corresponding
+   local environment variable. Select **Import from environment** or **Open password
+   window** only for missing providers. The local password window passes the value
+   to Magpie through standard input. MCP arguments, chat messages, logs, and role
+   preferences do not carry the key.
+2. Edit the display name, model ID, responsibility, and reasoning effort for each
+   role. Save the role preferences. They are stored in
+   `~/.codex/mygo/preferences.json`, which the bundled skill reads before dispatch.
+3. Select **Configure native V2**. MYGO uses an installed compatible Magpie or
+   downloads the official CLI, verifies its published SHA-256 checksum, selects
+   the configured models, and updates the Codex V2 settings. Existing Codex files
+   are backed up first. A failed setup restores the Codex files and Magpie's
+   provider model selections.
+4. Fully restart Codex and reopen the original chat. Send a small task and confirm
+   both a native child and the requested provider route. Installation and a valid
+   config do not by themselves prove that a provider accepted a request.
+
+DeepSeek, Kimi, GLM, and Gemini use `DEEPSEEK_API_KEY`, `MOONSHOT_API_KEY`,
+`ZAI_API_KEY`, and `GEMINI_API_KEY`, respectively. Select the appropriate GLM
+Coding Plan or open-platform route before importing that provider. Magpie stores
+provider keys in its own local configuration. That storage is not an encrypted
+secret vault. Review the local configuration permissions on a shared device.
+
+The interactive import and automatic CLI download currently target Windows x64.
+On other platforms, configure providers with Magpie's own interface and use the
+manual settings in [model routing](mygo/references/model-routing.md).
+
 ## Magpie V2 and direct API
 
-Install the `research-multiagent-orchestrator` folder as a Codex skill. For native
-external children, configure Magpie with your chosen providers, then follow the
-[V2 setup and acceptance criteria](research-multiagent-orchestrator/references/model-routing.md#native-v2-through-magpie).
-The local Desktop test resumed an existing V2 chat with Sol and ran DeepSeek,
-Kimi, GLM-5.3-Flash, and Gemini as four native children. Each actual vendor route
-returned HTTP 200. The test also completed a log search, design question,
-validated code draft, and copy revision.
+The plugin automates the tested Magpie path described in the
+[V2 setup and acceptance criteria](mygo/references/model-routing.md#native-v2-through-magpie).
+The earlier local Desktop acceptance resumed an existing V2 chat with Sol and ran
+DeepSeek, Kimi, GLM-5.3-Flash, and Gemini as native children. The test completed
+a log search, design question, validated code draft, and copy revision. This was
+a version-specific acceptance result, so repeat a real dispatch after upgrading
+Codex or Magpie.
 
-Use `$research-multiagent-orchestrator` in your Codex chat and specify the task and
+Use `$mygo` in your Codex chat and specify the task and
 the context approved for each external provider. If the current chat sends a
 sealed task or cannot start native external children, the bundled Python 3 helper
 can call the four official APIs with your own environment variables. See
-[direct API usage](research-multiagent-orchestrator/references/model-routing.md#direct-vendor-api).
-Install Magpie and set its Codex routing separately from MYGO.
+[direct API usage](mygo/references/model-routing.md#direct-vendor-api). A direct
+API call returns text to the current chat. It does not create a native child.
 
 ## What it does
 
@@ -79,6 +116,9 @@ fallback rules, and PowerShell utilities for Windows.
 
 ## Install
 
+This section covers the older standalone skill and its persisted PowerShell task
+workflow. Use the plugin installation above for the guided multi-model setup.
+
 ### Copy-paste installation prompt
 
 Paste this into a new Codex task on the target device:
@@ -87,7 +127,7 @@ Paste this into a new Codex task on the target device:
 Use $skill-installer to install the skill from:
 https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/tree/v0.1.0-beta.4
 
-Install the research-multiagent-orchestrator skill. After installation, read its
+Install the mygo skill. After installation, read its
 SKILL.md and configure MYGO for the current project. Run install-workflow.ps1 in
 preview mode first, review the proposed paths and changes, then apply them and run
 verify-workflow.ps1. Never print, read, store, or copy my DeepSeek API key. First
@@ -163,7 +203,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 In Codex, start a task with:
 
 ```text
-Use $research-multiagent-orchestrator for this scientific coding task.
+Use $mygo for this scientific coding task.
 Resolve the active composer model as the MYGO primary before delegation. Keep
 scientific interpretation and final review with that current-session primary.
 Route only work that can amortize worker startup, and review every worker diff.

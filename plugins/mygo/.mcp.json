@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "mygo": {
+      "command": "python",
+      "args": [
+        "-u",
+        "${PLUGIN_ROOT}/server/server.py"
+      ],
+      "env_vars": [
+        "CODEX_HOME",
+        "XDG_CONFIG_HOME",
+        "LOCALAPPDATA",
+        "USERPROFILE"
+      ]
+    }
+  }
+}

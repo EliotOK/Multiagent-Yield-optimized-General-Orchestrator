@@ -4,28 +4,57 @@
 
 简体中文 | [English](README.md)
 
-MYGO 是面向多模型协作和科研编程的 Codex skill。当前聊天的主 Agent 负责分工、
+MYGO 是内置 skill 的 Codex 插件，面向多模型协作和科研编程。当前聊天的主 Agent 负责分工、
 审核与验收。默认由 DeepSeek Flash（`deepseek-flash`）收集证据，
 GLM-5.3-Flash 构建候选实现，Luna 完成实际改动，Kimi 设计或审核方案，Gemini 负责
 写作或视觉反馈。
 
-发布用 skill 保留内部名称 `research-multiagent-orchestrator`，以便 Codex 能够
-明确识别它的用途和触发条件。
+插件内的 skill 使用简洁名称 `mygo`。
 
 > 现有 PowerShell 版本保留 `v0.1.0-beta.4` 标签。MYGO 是非官方社区项目。
 
+## 安装插件
+
+Windows x64 上准备 Python 3.11 或更新版本，以及当前 Codex Desktop，然后运行：
+
+```powershell
+codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestrator
+codex plugin add mygo@mygo
+```
+
+重启 Codex，打开 **MYGO 设置**，按下面的顺序完成配置：
+
+1. 先查看各供应商状态。MYGO 会检测 Magpie 和对应的本机环境变量。只对缺少
+   密钥的供应商选择“从环境变量导入”或“打开密码窗口”。本机密码窗口通过
+   标准输入把值交给 Magpie。MCP 参数、聊天、日志和分工文件不携带密钥。
+2. 修改每个角色的显示名称、模型 ID、默认职责和推理强度，然后保存。设置位于
+   `~/.codex/mygo/preferences.json`，内置 skill 会在每次派发前读取。
+3. 点击“配置原生 V2”。MYGO 使用已安装的兼容 Magpie，或者下载官方 CLI 并
+   核对发布方 SHA-256，然后选择模型并更新 Codex V2 配置。写入前备份 Codex
+   文件。配置失败会恢复这些文件和 Magpie 的供应商模型选择。
+4. 彻底重启 Codex，重开原聊天，派发一个小任务，同时确认原生子线程和实际
+   供应商路由。插件安装和配置写入成功不等于厂商已接受模型请求。
+
+DeepSeek、Kimi、GLM 和 Gemini 分别读取 `DEEPSEEK_API_KEY`、
+`MOONSHOT_API_KEY`、`ZAI_API_KEY` 和 `GEMINI_API_KEY`。导入 GLM 前先选择
+Coding Plan 或开放平台。密钥由 Magpie 保存在其本机配置中，这里并非加密的
+密码保险库。共用电脑应检查本机配置文件的访问权限。
+
+交互导入和自动下载 CLI 目前面向 Windows x64。其他平台请用 Magpie 自身界面
+配置供应商，并参考[模型路由说明](mygo/references/model-routing.md)手动设置。
+
 ## Magpie V2 与官方 API 直连
 
-将 `research-multiagent-orchestrator` 目录安装为 Codex skill。要用外部原生子代理，
-请先在 Magpie 接入供应商，再按 [V2 配置与验收说明](research-multiagent-orchestrator/references/model-routing.md#native-v2-through-magpie)
-检查当前 Codex 聊天。Windows Desktop 实测在重开的同一条 V2 聊天中由 Sol 派出
-DeepSeek、Kimi、GLM-5.3-Flash 和 Gemini 四个原生子线程。厂商路由均返回 HTTP 200，
-后续也通过了日志搜索、方案判断、代码验收和文案修订。
+插件会按 [V2 配置与验收说明](mygo/references/model-routing.md#native-v2-through-magpie)
+自动完成已验证的 Magpie 配置路径。此前的 Windows Desktop 验收在重开的同一条
+V2 聊天中由 Sol 派出 DeepSeek、Kimi、GLM-5.3-Flash 和 Gemini 原生子线程，完成了
+日志搜索、方案判断、代码验收和文案修订。该结果对应当时的软件版本，升级 Codex
+或 Magpie 后仍应重新实际派发验收。
 
-在当前 Codex 聊天调用 `$research-multiagent-orchestrator`，说明任务及可发给对应厂商
+在当前 Codex 聊天调用 `$mygo`，说明任务及可发给对应厂商
 的材料范围。当前聊天发出封装任务或无法原生派发时，可用随附的 Python 3 工具和本机
-环境变量 [直连各家官方 API](research-multiagent-orchestrator/references/model-routing.md#direct-vendor-api)。
-Magpie 的安装和 Codex 路由由使用者单独配置。
+环境变量 [直连各家官方 API](mygo/references/model-routing.md#direct-vendor-api)。
+直连把文本结果返回当前聊天，不会创建原生子线程。
 
 ## 工作方式
 
@@ -71,6 +100,9 @@ API key 不应写入项目文件、prompt、task 文件或 GitHub 仓库。
 
 ## 安装
 
+本节保留旧的独立 skill 与 PowerShell 持久任务工作流。需要引导式多模型配置时，
+使用上面的插件安装方式。
+
 ### 可直接粘贴给 Codex 的安装 prompt
 
 在新设备的 Codex 中新建一个任务，然后完整粘贴以下内容：
@@ -79,7 +111,7 @@ API key 不应写入项目文件、prompt、task 文件或 GitHub 仓库。
 请使用 $skill-installer 从下面的 GitHub 仓库安装 skill：
 https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/tree/v0.1.0-beta.4
 
-安装其中的 research-multiagent-orchestrator skill。安装后阅读它的 SKILL.md，
+安装其中的 mygo skill。安装后阅读它的 SKILL.md，
 并为当前项目配置 MYGO 工作流。先以 preview 模式运行 install-workflow.ps1，
 核对拟修改的路径和内容，再执行 apply，最后运行 verify-workflow.ps1。
 不要输出、读取、保存或复制我的 DeepSeek API key。
@@ -159,7 +191,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 在 Codex 中可以这样开始科研任务：
 
 ```text
-请使用 $research-multiagent-orchestrator 处理这个科研编程任务。
+请使用 $mygo 处理这个科研编程任务。
 委派前将当前会话模型解析为 MYGO 主控。科研解释、派发、整合和最终审核只能由
 这个当前会话主 Agent负责；仅派发能够覆盖 worker 启动成本的工作；
 主 Agent必须审核全部 worker diff 并独立运行适当验证。

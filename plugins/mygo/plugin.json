@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "mygo",
+  "version": "0.2.0",
+  "description": "Configure multi-model Codex subagents and assign their responsibilities.",
+  "author": {
+    "name": "EliotOK",
+    "url": "https://github.com/EliotOK"
+  },
+  "homepage": "https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator",
+  "repository": "https://github.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator",
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/mygo/SKILL.md",
+      "interface": {
+        "displayName": "MYGO",
+        "shortDescription": "多模型子代理与分工设置",
+        "longDescription": "内置 MyGO 多模型协作 skill。打开设置面板即可检测本机密钥、接入 Magpie、配置原生 V2 子代理，并修改各模型的默认职责。",
+        "developerName": "EliotOK",
+        "category": "Productivity",
+        "capabilities": ["Interactive", "Read", "Write"],
+        "defaultPrompt": [
+          "打开 MYGO 设置面板",
+          "检查并配置 MYGO 多模型子代理",
+          "修改 MYGO 的模型分工"
+        ],
+        "brandColor": "#32736B"
+      }
+    }
+  }
+}

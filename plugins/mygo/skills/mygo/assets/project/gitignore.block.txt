@@ -1,0 +1,18 @@
+# mygo:start
+.codex/tasks/*.md
+.codex/tasks/*.mygo-tmp
+.codex/tasks/*.rmo-tmp
+.codex/bindings/*.json
+.codex/bindings/*.mygo-tmp
+.codex/bindings/*.rmo-tmp
+.codex/bindings/.create.lock
+.codex/bindings/.create-transaction.json
+work/worker_state/*.json
+work/worker_state/*.mygo-tmp
+work/worker_state/*.rmo-tmp
+work/worker_state/*.lock
+.codex/mygo.toml
+.codex/research-multiagent.toml
+.codex/diagnostics/task-history/
+.codex/diagnostics/backups/
+# mygo:end
