@@ -35,10 +35,13 @@ action. The Codex **Configure** button starts setup in a chat. You can also send
    window** only for missing providers. The local password window passes the value
    to Magpie through standard input. MCP arguments, chat messages, logs, and role
    preferences do not carry the key.
-2. Edit the display name, model ID, responsibility, and reasoning effort for each
-   role. Save the role preferences. They are stored in
-   `~/.codex/mygo/preferences.json`, which the bundled skill reads before dispatch.
-3. Select **Configure native V2**. MYGO uses an installed compatible Magpie or
+2. Choose a model from each role's dropdown. The choices come from Magpie's local
+   model list and the Codex catalog, with previously saved IDs kept available.
+   Expand the role's settings to edit its display name, responsibility, and effort.
+   Save the changes. The bundled skill
+   reads `~/.codex/mygo/preferences.json` before dispatch.
+3. Write the V2 configuration for first-time setup. Sync the selected models when
+   you choose a model outside the current Codex catalog. MYGO uses an installed compatible Magpie or
    downloads the official CLI, verifies its published SHA-256 checksum, selects
    the configured models, and updates the Codex V2 settings. Existing Codex files
    are backed up first. A failed setup restores the Codex files and Magpie's

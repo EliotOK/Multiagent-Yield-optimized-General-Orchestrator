@@ -8,9 +8,9 @@ import sys
 import threading
 
 from mygo_setup import (
-    DEFAULT_ROLES, EFFORTS, MODEL_PATTERN, Magpie, MINIMUM_MAGPIE, PROVIDERS,
+    DEFAULT_ROLES, EFFORTS, Magpie, MINIMUM_MAGPIE, PROVIDERS,
     configure, credential_status, find_codex,
-    install_magpie, load_roles, save_roles, status,
+    install_magpie, load_roles, role_model_choices, save_roles, status,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +67,8 @@ for tool in TOOLS:
         tool["outputSchema"] = {"type": "object", "properties": {"values": {"type": "object"}}, "required": ["values"]}
 
 
-def setting_schema(preferences):
+def setting_schema(home, preferences):
+    choices = role_model_choices(home, preferences)
     properties, values = {}, {}
     groups = [{
         "kind": "group",
@@ -76,12 +77,12 @@ def setting_schema(preferences):
     }]
     for key, role in preferences["roles"].items():
         prefix = f"{key}."
-        for field, title in (("label", "Display name"), ("model", "Magpie model ID"), ("responsibility", "Default responsibility"), ("effort", "Reasoning effort")):
+        for field, title in (("label", "Display name"), ("model", "Model"), ("responsibility", "Default responsibility"), ("effort", "Reasoning effort")):
             properties[prefix + field] = {"type": "string", "title": title}
             if field == "effort":
                 properties[prefix + field]["enum"] = sorted(EFFORTS)
             if field == "model":
-                properties[prefix + field]["pattern"] = MODEL_PATTERN.pattern
+                properties[prefix + field]["enum"] = choices[key]["options"]
             values[prefix + field] = role[field]
         groups.append({"kind": "group", "title": f"{key} · {role['label']}", "items": [{"kind": "property", "property": prefix + field} for field in ("label", "model", "responsibility", "effort")]})
     return {"schema": {"type": "object", "properties": properties, "required": list(properties)}, "values": values, "layout": groups}
@@ -141,7 +142,7 @@ class Server:
         if name == "read_settings":
             return self.read()
         if name == "settings.read":
-            return setting_schema(load_roles(self.home / "mygo" / "preferences.json"))
+            return setting_schema(self.home, load_roles(self.home / "mygo" / "preferences.json"))
         if name == "settings.update":
             preferences = load_roles(self.home / "mygo" / "preferences.json")
             changes = args["set"]
@@ -154,7 +155,7 @@ class Server:
                 if not isinstance(value, str):
                     raise ValueError("MYGO settings must be text values.")
                 preferences["roles"][role][attribute] = value
-            return setting_schema(save_roles(self.home / "mygo" / "preferences.json", preferences))
+            return setting_schema(self.home, save_roles(self.home / "mygo" / "preferences.json", preferences))
         if name == "save_roles":
             with self.setup_lock:
                 return {"saved": True, "preferences": save_roles(self.home / "mygo" / "preferences.json", args["preferences"])}
@@ -184,7 +185,7 @@ class Server:
                 result = {
                     "protocolVersion": version if version in ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25") else "2025-06-18",
                     "capabilities": {"tools": {}, "resources": {}, "experimental": {"openai/settings": {"readTool": "settings.read", "updateTool": "settings.update"}}},
-                    "serverInfo": {"name": "mygo", "version": "0.2.1"},
+                    "serverInfo": {"name": "mygo", "version": "0.3.0"},
                     "instructions": "Use show_settings for local setup. Never request, accept, or return API keys. Provider import tools accept only a provider name and source. Role preferences contain no credentials.",
                 }
             elif method == "ping":

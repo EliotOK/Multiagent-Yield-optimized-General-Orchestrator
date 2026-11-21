@@ -158,6 +158,33 @@ class ManifestAndProtocolTests(IsolatedCase):
         with self.assertRaises(ValueError):
             instance.call("settings.update", {"set": {"researcher.effort": "extreme"}})
 
+    def test_model_choices_use_the_local_catalog_and_preserve_saved_ids(self):
+        provider_path = self.write_providers()
+        providers = json.loads(provider_path.read_text(encoding="utf-8"))["providers"]
+        deepseek = providers[0]
+        deepseek["pickedFrom"] = ["deepseek-flash", "deepseek-v4-pro", "old-model"]
+        deepseek["delisted"] = ["old-model"]
+        self.write_providers(providers)
+        catalog = {"models": [
+            {"slug": "deepseek/deepseek-flash", "multi_agent_version": "v2"},
+            {"slug": "gpt-6-luna", "multi_agent_version": "v2"},
+            {"slug": "gpt-6.2-sol", "multi_agent_version": "v2"},
+            {"slug": "gpt-reserve", "multi_agent_version": "v2", "visibility": "hide"},
+        ]}
+        (self.home / "mygo-magpie-v2-models.json").write_text(json.dumps(catalog), encoding="utf-8")
+        instance = mygo_server.Server(self.home)
+        result = instance.call("settings.update", {"set": {"researcher.model": "deepseek/saved-preview"}})
+        model_choices = instance.call("read_settings", {})["model_choices"]
+        deepseek_choices = model_choices["researcher"]
+        self.assertEqual(deepseek_choices["options"], [
+            "deepseek/saved-preview", "deepseek/deepseek-flash", "deepseek/deepseek-v4-pro",
+        ])
+        self.assertEqual(deepseek_choices["retained_model"], "deepseek/saved-preview")
+        self.assertEqual(deepseek_choices["needs_sync"], ["deepseek/saved-preview", "deepseek/deepseek-v4-pro"])
+        self.assertEqual(result["schema"]["properties"]["researcher.model"]["enum"], deepseek_choices["options"])
+        self.assertEqual(model_choices["executor"]["options"], ["gpt-6-luna", "gpt-6.2-sol"])
+        self.assertNotIn("configured-locally", json.dumps(model_choices))
+
     def test_credential_window_launch_has_no_secret_or_blocking_wait(self):
         instance = mygo_server.Server(self.home)
         instance.magpie = FakeMagpie()
@@ -221,10 +248,15 @@ class ConfigurationTests(IsolatedCase):
         return {"models": [{"slug": slug, "multi_agent_version": "v2"} for slug in slugs]}
 
     def test_model_selection_uses_actual_provider_id_and_full_list(self):
-        self.write_providers()
+        provider_path = self.write_providers()
+        providers = json.loads(provider_path.read_text(encoding="utf-8"))["providers"]
+        providers[0]["pickedFrom"].append("deepseek-v4-pro")
+        self.write_providers(providers)
+        preferences = copy.deepcopy(mygo_setup.DEFAULT_ROLES)
+        preferences["roles"]["researcher"]["model"] = "deepseek/deepseek-v4-pro"
         fake = FakeMagpie()
-        fake.select_models(mygo_setup.DEFAULT_ROLES)
-        self.assertIn(["provider", "models", "deepseek", "deepseek-flash"], fake.calls)
+        fake.select_models(preferences)
+        self.assertIn(["provider", "models", "deepseek", "deepseek-v4-pro"], fake.calls)
         self.assertIn(["sync"], fake.calls)
         self.assertFalse(any(call[:2] == ["provider", "refresh"] for call in fake.calls))
 

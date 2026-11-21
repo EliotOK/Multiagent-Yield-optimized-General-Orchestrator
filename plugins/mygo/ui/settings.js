@@ -1,4 +1,14 @@
 const byId = (id) => document.getElementById(id);
+const rolePurposes = {
+  researcher: "资料检索",
+  builder: "代码构建",
+  reviewer: "方案与审核",
+  writer: "写作与视觉",
+  executor: "执行与验证",
+};
+const effortOptions = [
+  ["low", "低"], ["medium", "中"], ["high", "高"], ["xhigh", "很高"], ["max", "最高"],
+];
 const pending = new Map();
 let requestId = 0;
 let state = null;
@@ -75,9 +85,11 @@ function renderProviders() {
   const entries = Object.entries(state.credentials || {});
   const ready = entries.filter(([, provider]) => provider.configured).length;
   byId("ready-count").textContent = `${ready} / ${entries.length} 已接入 Magpie`;
+  byId("ready-count").classList.toggle("ready", ready === entries.length);
+  byId("credential-help").hidden = ready === entries.length;
   for (const [name, provider] of entries) {
     const row = element("div", "provider");
-    row.appendChild(element("span", "provider-name", provider.label));
+    row.appendChild(element("strong", "provider-name", provider.label));
     const statusText = provider.configured ? "Magpie 已配置" : provider.environment ? "检测到本机环境变量" : "尚未检测到密钥";
     row.appendChild(element("span", `provider-state${provider.configured ? " ready" : ""}`, statusText));
     if (!provider.configured) {
@@ -99,13 +111,24 @@ function renderProviders() {
     }
     container.appendChild(row);
   }
-  byId("v2-status").textContent = state.v2_configured ? "已写入配置" : "未配置";
+}
+
+function hasPendingModels(preferences) {
+  return state.v2_configured && Object.entries(preferences.roles).some(([key, role]) =>
+    state.model_choices[key].needs_sync.includes(role.model));
+}
+
+function renderNativeStatus() {
+  const needsSync = hasPendingModels(rolePreferences());
+  const status = byId("v2-status");
+  status.textContent = needsSync ? "有模型待同步" : state.v2_configured ? "已写入配置" : "未配置";
+  status.classList.toggle("ready", state.v2_configured && !needsSync);
+  status.classList.toggle("pending", needsSync);
+  byId("configure").textContent = needsSync ? "同步所选模型" : "写入原生 V2 配置";
   const details = byId("setup-details");
   details.replaceChildren();
-  details.appendChild(element("div", "", state.magpie_installed ? `Magpie ${state.magpie_version || "版本未知"}${state.magpie_compatible ? "，支持安全导入" : "，配置时将安装兼容 CLI"}` : "配置时将下载并校验兼容的 Magpie CLI"));
-  if (state.v2_configured && state.missing_models?.length) {
-    details.appendChild(element("div", "warning", `当前目录缺少：${state.missing_models.join("、")}`));
-  }
+  const cliStatus = state.magpie_compatible ? `Magpie ${state.magpie_version}` : "写入配置时会下载并校验兼容的 Magpie CLI。";
+  details.appendChild(element("p", "", cliStatus));
 }
 
 async function importCredential(provider, source, button) {
@@ -122,45 +145,80 @@ async function importCredential(provider, source, button) {
   }
 }
 
-function renderRoles() {
+function renderRoles(preferences) {
   const container = byId("roles");
+  const expandedRoles = new Set([...container.querySelectorAll(".role details[open]")].map((details) =>
+    details.closest(".role").dataset.role));
   container.replaceChildren();
-  for (const [key, role] of Object.entries(state.roles.roles)) {
-    const card = element("div", "role");
+  for (const [key, role] of Object.entries(preferences.roles)) {
+    const group = state.model_choices[key];
+    const card = element("article", "role");
     card.dataset.role = key;
     const title = element("div", "role-title");
-    title.appendChild(element("strong", "", role.label));
-    title.appendChild(element("span", "role-key", key));
+    title.appendChild(element("h3", "", group.provider));
+    title.appendChild(element("span", "role-purpose", rolePurposes[key]));
     card.appendChild(title);
-    const modelRow = element("div", "role-model");
-    modelRow.appendChild(field("模型 ID", "model", role.model));
-    const effort = field("推理强度", "effort", role.effort, "select");
-    const select = effort.querySelector("select");
-    for (const value of ["low", "medium", "high", "xhigh", "max"]) {
-      const option = element("option", "", value);
-      option.value = value;
-      option.selected = value === role.effort;
-      select.appendChild(option);
-    }
-    modelRow.appendChild(effort);
-    card.appendChild(modelRow);
-    card.appendChild(field("显示名称", "label", role.label));
-    card.appendChild(field("默认职责", "responsibility", role.responsibility, "textarea"));
+
+    const choices = [...new Set([role.model, ...group.options])].map((id) => {
+      const retained = id === group.retained_model || !group.options.includes(id);
+      return [id, retained ? `${id} · 现有选择` : id.replace(/^[^/]+\//, "")];
+    });
+    const model = selectControl("model", role.model, choices);
+    model.setAttribute("aria-label", `${group.provider} 型号`);
+    const modelField = element("div", "model-field");
+    const note = element("a", "model-note", "此型号需要同步到原生 V2");
+    note.href = "#native-heading";
+    const updateModelNote = () => {
+      note.hidden = !state.v2_configured || !group.needs_sync.includes(model.value);
+    };
+    model.addEventListener("change", () => {
+      updateModelNote();
+      renderNativeStatus();
+    });
+    updateModelNote();
+    modelField.append(model, note);
+    card.appendChild(modelField);
+
+    const name = element("input");
+    name.type = "text";
+    name.name = "label";
+    name.maxLength = 60;
+    name.value = role.label;
+    const effort = selectControl("effort", role.effort, effortOptions);
+    const fieldRow = element("div", "field-row");
+    fieldRow.append(field("角色名称", name), field("推理强度", effort));
+
+    const responsibility = element("textarea");
+    responsibility.name = "responsibility";
+    responsibility.maxLength = 1000;
+    responsibility.rows = 2;
+    responsibility.value = role.responsibility;
+    const settings = element("details", "role-settings");
+    settings.open = expandedRoles.has(key);
+    const fields = element("div", "role-settings-fields");
+    fields.append(fieldRow, field("默认职责", responsibility));
+    settings.append(element("summary", "", "分工设置"), fields);
+    card.appendChild(settings);
     container.appendChild(card);
   }
-  byId("preferences-path").textContent = state.preferences_path;
 }
 
-function field(labelText, name, value, type = "input") {
-  const wrapper = element("div", "field");
-  const label = element("label", "", labelText);
-  const input = document.createElement(type === "input" ? "input" : type);
-  input.name = name;
-  input.value = value;
-  if (type === "input") input.type = "text";
-  label.appendChild(input);
-  wrapper.appendChild(label);
-  return wrapper;
+function field(text, control) {
+  const label = element("label", "field");
+  label.append(element("span", "", text), control);
+  return label;
+}
+
+function selectControl(name, value, choices) {
+  const select = element("select");
+  select.name = name;
+  for (const [id, label] of choices) {
+    const option = element("option", "", label);
+    option.value = id;
+    select.appendChild(option);
+  }
+  select.value = value;
+  return select;
 }
 
 function rolePreferences() {
@@ -182,43 +240,50 @@ async function saveRoles() {
 }
 
 async function refresh() {
-  state = await callTool("read_settings");
+  const updated = await callTool("read_settings");
+  const draft = state ? rolePreferences() : null;
+  const edited = draft && JSON.stringify(draft) !== JSON.stringify(state.roles);
+  state = updated;
+  renderRoles(edited ? draft : state.roles);
   renderProviders();
-  renderRoles();
+  renderNativeStatus();
   resize();
 }
 
-byId("refresh").addEventListener("click", () => refresh().then(() => report("状态已刷新。")).catch((error) => report(error.message, true)));
-byId("save-roles").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
+async function runSettingsAction(action) {
+  const refreshButton = byId("refresh");
+  const saveButton = byId("save-roles");
+  const configureButton = byId("configure");
+  refreshButton.disabled = saveButton.disabled = configureButton.disabled = true;
   try {
-    await saveRoles();
-    report("分工预设已保存，之后每次派发都会读取。");
+    await action();
   } catch (error) {
     report(error.message, true);
   } finally {
-    button.disabled = false;
+    refreshButton.disabled = false;
+    saveButton.disabled = configureButton.disabled = !state;
   }
-});
-byId("configure").addEventListener("click", async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
+}
+
+byId("refresh").addEventListener("click", () => runSettingsAction(async () => {
+  await refresh();
+  report("状态已刷新。");
+}));
+byId("save-roles").addEventListener("click", () => runSettingsAction(async () => {
+  await saveRoles();
+  report(hasPendingModels(state.roles) ? "分工预设已保存。请在原生子代理区同步所选型号。" : "分工预设已保存。");
+}));
+byId("configure").addEventListener("click", () => runSettingsAction(async () => {
   report("正在检查模型目录并写入原生 V2 配置，可能需要下载兼容 CLI。");
-  try {
-    await saveRoles();
-    const result = await callTool("configure_native");
-    report(`配置完成。请彻底重启 Codex，再重开原聊天验收子代理。\n备份：${result.backup || "无需备份"}`);
-    await refresh();
-  } catch (error) {
-    report(error.message, true);
-  } finally {
-    button.disabled = false;
-  }
-});
+  await saveRoles();
+  const result = await callTool("configure_native");
+  const backup = result.backup ? `\n备份目录 ${result.backup}` : "";
+  report(`配置完成。请重启 Codex 以加载模型目录。${backup}`);
+  await refresh();
+}));
 
 bridgeReady = rpc("ui/initialize", {
-  appInfo: { name: "mygo-settings", version: "0.2.1" },
+  appInfo: { name: "mygo-settings", version: "0.3.0" },
   appCapabilities: {},
   protocolVersion: "2026-01-26",
 }).then((result) => {
@@ -227,7 +292,7 @@ bridgeReady = rpc("ui/initialize", {
   return result;
 });
 
-bridgeReady.then(refresh).catch((error) => report(error.message, true));
+bridgeReady.then(() => runSettingsAction(refresh)).catch((error) => report(error.message, true));
 new ResizeObserver(resize).observe(document.body);
 window.addEventListener("pagehide", () => {
   for (const request of pending.values()) clearTimeout(request.timer);

@@ -7,39 +7,54 @@
   <style>/* SETTINGS_CSS */</style>
 </head>
 <body>
-  <header>
-    <div><p class="eyebrow">MULTI-MODEL WORKSPACE</p><h1>MYGO</h1><p class="intro">在同一个 Codex 聊天中组织不同模型。</p></div>
-    <button id="refresh" class="icon-button" title="刷新状态" aria-label="刷新状态">↻</button>
+  <header class="page-header">
+    <h1>MYGO 设置</h1>
+    <button id="refresh" class="quiet" type="button" disabled>刷新状态</button>
   </header>
-  <div id="notice" class="notice" hidden></div>
+  <div id="notice" class="notice" role="status" hidden></div>
   <main>
-    <section>
-      <div class="section-heading"><div><h2>模型接入</h2><p>先检查 Magpie 和本机环境变量，缺少时再主动导入。</p></div><span id="ready-count" class="status-pill">检测中</span></div>
+    <section class="panel" aria-labelledby="roles-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="roles-heading">模型与分工</h2>
+          <p class="hint">保存后，下次派发会读取新的分工。</p>
+        </div>
+        <button id="save-roles" class="primary" type="button" disabled>保存分工</button>
+      </div>
+      <div id="roles" class="role-list">
+        <p class="hint">正在加载模型和分工…</p>
+      </div>
+    </section>
+    <section class="panel" aria-labelledby="providers-heading">
+      <div class="section-heading">
+        <h2 id="providers-heading">模型接入</h2>
+        <span id="ready-count" class="status-pill">检测中</span>
+      </div>
       <div id="providers" class="provider-list"></div>
       <template id="glm-plan-field">
         <div class="provider-plan">
-          <label class="plan-row">GLM 接入方式
+          <label class="field">
+            <span>GLM 接入方式</span>
             <select id="glm-plan" aria-describedby="glm-plan-help">
-              <option value="coding">GLM Coding Plan 套餐</option>
+              <option value="coding">GLM Coding Plan</option>
               <option value="api">智谱开放平台 API</option>
             </select>
           </label>
-          <p id="glm-plan-help">按你的账户类型选择，Magpie 会使用对应的 API 入口。</p>
+          <p id="glm-plan-help" class="hint">按你的套餐选择 API 入口。</p>
         </div>
       </template>
-      <p class="fine-print">密钥在本机密码窗口输入，经标准输入交给 Magpie。插件工具、聊天和分工配置均不接收密钥。完成导入后点击右上角刷新。</p>
+      <p id="credential-help" class="hint panel-note" hidden>密钥在本机密码窗口输入。导入后点击右上角刷新状态。</p>
     </section>
-    <section>
-      <div class="section-heading"><div><h2>原生子代理</h2><p>通过 Magpie 在当前聊天使用不同厂商的模型。</p></div><span id="v2-status" class="status-pill">未配置</span></div>
+    <section class="panel" aria-labelledby="native-heading">
+      <div class="section-heading">
+        <h2 id="native-heading">原生子代理</h2>
+        <span id="v2-status" class="status-pill">检测中</span>
+      </div>
       <div id="setup-details" class="setup-details"></div>
-      <button id="configure" class="primary full">安装或修复原生 V2 配置</button>
-      <p class="fine-print">下载 Magpie 官方 CLI 并核对 SHA-256，配置前备份 Codex 文件。完成后彻底重启 Codex，再重开原聊天进行实际派发验收。Windows 首次导入会打开独立密码窗口。</p>
-    </section>
-    <section>
-      <div class="section-heading"><div><h2>默认分工</h2><p>主 Agent 可以按任务调整，不必机械地调用所有角色。</p></div></div>
-      <div id="roles" class="role-list"></div>
-      <button id="save-roles" class="primary full">保存分工预设</button>
-      <p id="preferences-path" class="fine-print path"></p>
+      <div class="panel-footer">
+        <p class="hint">写入原生 V2 配置后，重启 Codex 以加载模型目录。</p>
+        <button id="configure" class="secondary" type="button" disabled>写入原生 V2 配置</button>
+      </div>
     </section>
   </main>
   <script>/* SETTINGS_JS */</script>
