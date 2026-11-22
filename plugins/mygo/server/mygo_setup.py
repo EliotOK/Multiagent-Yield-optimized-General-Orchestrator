@@ -232,12 +232,13 @@ def provider_state():
         return {}
     result = {}
     for item in data.get("providers", []):
-        if isinstance(item, dict):
+        if isinstance(item, dict) and isinstance(item.get("id"), str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", item["id"]):
             picked = model_ids(item.get("models"))
             discovered = model_ids(item.get("pickedFrom"))
             delisted = set(model_ids(item.get("delisted")))
             result[item.get("id", "")] = {
                 "preset": item.get("preset", ""),
+                "label": str(item.get("name") or item["id"]),
                 "configured": bool(item.get("key") or item.get("keys") or item.get("account")),
                 "models": [model for model in dict.fromkeys(discovered + picked) if model not in delisted],
             }
@@ -259,6 +260,13 @@ def credential_status(existing=None):
             "ready": bool(matches) or env,
             "source": "magpie" if matches else "environment" if env else "missing",
         }
+    shown = {item["provider_id"] for item in result.values() if item["configured"]}
+    for provider_id, item in existing.items():
+        if item["configured"] and provider_id not in shown:
+            result[f"magpie:{provider_id}"] = {
+                "label": item["label"], "provider_id": provider_id,
+                "configured": True, "environment": False, "ready": True, "source": "magpie",
+            }
     return result
 
 
@@ -276,31 +284,33 @@ def catalog_models(path):
     }
 
 
+def connected_provider(slug, providers):
+    prefix, separator, model = slug.partition("/")
+    if not separator or not model:
+        return None
+    if prefix in providers:
+        return prefix if providers[prefix]["configured"] else None
+    # Older role files use the preset as the prefix.
+    return next((key for key, item in providers.items()
+                 if item["configured"] and item["preset"] == prefix), None)
+
+
 def role_model_choices(home, preferences, providers=None, catalog=None):
-    """Use local catalogs and keep the saved ID available even if it is absent from them."""
     if providers is None:
         providers = provider_state()
     if catalog is None:
         catalog = catalog_models(home / "mygo-magpie-v2-models.json")
 
-    connected = {}
-    for provider in providers.values():
-        if provider["configured"]:
-            connected.setdefault(provider["preset"], provider["models"])
-
-    groups = {}
-    for name, preset in MAGPIE_PRESETS.items():
-        vendor = PROVIDERS[name]
-        options = [f"{preset}/{model}" for model in connected.get(preset, [])]
-        if not options:
-            options = [
-                slug for slug, model in catalog.items()
-                if slug.partition("/")[0] == preset and slug.count("/") == 1
-                and model.get("multi_agent_version") == "v2"
-            ]
-        if not options:
-            options = [f"{preset}/{model}" for model in vendor["models"]]
-        groups[preset] = (vendor["label"], [slug for slug in options if MODEL_PATTERN.fullmatch(slug)])
+    model_groups = {}
+    for provider_id, provider in providers.items():
+        if not provider["configured"]:
+            continue
+        options = [f"{provider_id}/{model}" for model in provider["models"]]
+        options.extend(slug for slug, model in catalog.items()
+                       if connected_provider(slug, providers) == provider_id
+                       and model.get("multi_agent_version") == "v2"
+                       and model.get("visibility") != "hide")
+        model_groups[provider_id] = {"label": provider["label"], "options": list(dict.fromkeys(options))}
 
     codex_models = catalog_models(home / "models_cache.json") | catalog
     native = [
@@ -308,30 +318,26 @@ def role_model_choices(home, preferences, providers=None, catalog=None):
         if slug.startswith("gpt-") and "/" not in slug
         and model.get("multi_agent_version") == "v2" and model.get("visibility") != "hide"
     ]
-    groups["openai"] = ("OpenAI", native or [DEFAULT_ROLES["roles"]["executor"]["model"]])
-
-    def family(model):
-        if model.startswith("gpt-") and "/" not in model:
-            return "openai"
-        return model.partition("/")[0]
+    model_groups["@codex"] = {"label": "OpenAI · Codex", "options": native or [DEFAULT_ROLES["roles"]["executor"]["model"]]}
 
     result = {}
     for key, role in preferences["roles"].items():
         current = role["model"]
-        group = family(current)
-        if group not in groups:
-            group = family(DEFAULT_ROLES["roles"][key]["model"])
-        label, options = groups[group]
-        retained = current not in options
-        choices = [current, *options] if retained else options
+        group_id = "@codex" if current.startswith("gpt-") and "/" not in current else connected_provider(current, providers)
+        group = model_groups.get(group_id)
+        groups = {name: {"label": item["label"], "options": list(item["options"])}
+                  for name, item in model_groups.items()}
+        retained = group is not None and current not in group["options"]
+        if retained:
+            groups[group_id]["options"].insert(0, current)
+        options = [slug for item in groups.values() for slug in item["options"]]
         result[key] = {
-            "provider": label,
-            "options": choices,
+            "provider": group["label"] if group else None,
+            "active": group is not None,
+            "groups": [item for item in groups.values() if item["options"]],
+            "options": options,
             "retained_model": current if retained else None,
-            "needs_sync": [
-                slug for slug in choices if family(slug) in MAGPIE_PRESETS.values()
-                and catalog.get(slug, {}).get("multi_agent_version") != "v2"
-            ],
+            "needs_sync": [slug for slug in options if "/" in slug and catalog.get(slug, {}).get("multi_agent_version") != "v2"],
         }
     return result
 
@@ -373,10 +379,17 @@ class Magpie:
                 f"Install {MAGPIE_VERSION} or newer from https://usemagpie.ai/ and retry."
             )
 
+    def key_presets(self):
+        """Read the presets that require only an API key."""
+        output = self.run(["presets"], timeout=8)
+        pattern = re.compile(r"^\s*(.+?)\s{2,}([a-z0-9-]+)\s+magpie provider add \2 <key>\s*$", re.M)
+        return dict((preset, label) for label, preset in pattern.findall(output))
+
     def save_credential(self, name, secret, plan="coding"):
         """Add a secret through stdin, then remove the CLI's creation placeholder."""
-        if name not in PROVIDERS:
-            raise ValueError("Unknown provider.")
+        if name not in PROVIDERS and name not in self.key_presets():
+            raise ValueError("Unknown Magpie API-key preset.")
+        preset = MAGPIE_PRESETS.get(name, name)
         if not isinstance(secret, str) or not 8 <= len(secret) <= 4096 or secret != secret.strip():
             raise ValueError("The API key is empty or invalid.")
         if any(character.isspace() for character in secret) or secret == PENDING_KEY:
@@ -384,16 +397,16 @@ class Magpie:
         if plan not in {"coding", "api"}:
             raise ValueError("GLM plan must be coding or api.")
         self.require_supported_version()
-        status = credential_status()[name]
-        if status["configured"]:
+        providers = provider_state()
+        if any(item["preset"] == preset and item["configured"] for item in providers.values()):
             return {"provider": name, "saved": False, "reason": "already_configured"}
         path = magpie_home() / "providers.json"
         original = path.read_bytes() if path.exists() else None
-        provider_id = status["provider_id"]
-        created = provider_id not in provider_state()
+        provider_id = next((key for key, item in providers.items() if item["preset"] == preset), preset)
+        created = provider_id not in providers or providers[provider_id]["preset"] != preset
         try:
             if created:
-                args = ["provider", "add", MAGPIE_PRESETS[name], PENDING_KEY]
+                args = ["provider", "add", preset, PENDING_KEY]
                 if name == "glm":
                     args.append("plan=" + plan)
                 output = self.run(args)
@@ -413,6 +426,11 @@ class Magpie:
                 temporary.write_bytes(original)
                 os.replace(temporary, path)
             raise
+        if name not in PROVIDERS and not provider_state().get(provider_id, {}).get("models"):
+            try:
+                self.run(["provider", "refresh", provider_id], timeout=30)
+            except (OSError, RuntimeError, subprocess.SubprocessError):
+                return {"provider": name, "saved": True, "provider_id": provider_id, "refresh_failed": True}
         return {"provider": name, "saved": True, "provider_id": provider_id}
 
     def _remove_pending_key(self, path, provider_id):
@@ -437,30 +455,22 @@ class Magpie:
         raise RuntimeError("Magpie did not create the requested provider.")
 
     def select_models(self, preferences):
-        choices = {preset: set() for preset in MAGPIE_PRESETS.values()}
+        providers = provider_state()
+        choices = {}
         for role in preferences["roles"].values():
-            provider, separator, model = role["model"].partition("/")
-            if separator and provider in choices and model:
-                choices[provider].add(model)
-        for provider, models in choices.items():
-            if not models:
-                continue
-            existing = next((item for item in provider_state().values()
-                             if item["preset"] == provider and item["configured"]), None)
-            if existing is None:
-                raise RuntimeError(f"Add a key for {provider} before selecting its models.")
-            provider_id = next(key for key, item in provider_state().items()
-                               if item["preset"] == provider and item["configured"])
-            available = set(existing["models"])
-            if not available or not models.issubset(available):
+            slug = role["model"]
+            provider_id = connected_provider(slug, providers)
+            if provider_id:
+                choices.setdefault(provider_id, set()).add(slug.partition("/")[2])
+        for provider_id, models in choices.items():
+            available = set(providers[provider_id]["models"])
+            if not models.issubset(available):
                 self.run(["provider", "refresh", provider_id], timeout=120)
-                existing = next(item for item in provider_state().values()
-                                if item["preset"] == provider and item["configured"])
-                available = set(existing["models"])
+                available = set(provider_state().get(provider_id, {}).get("models", []))
             unknown = sorted(models - available)
             if unknown:
-                raise RuntimeError(f"Magpie does not list these models for {provider}: {', '.join(unknown)}. Choose available IDs in the role panel or adjust this provider in Magpie.")
-            self.run(["provider", "models", provider_id, *sorted(models)], timeout=120)
+                raise RuntimeError(f"Magpie does not list these models for {provider_id}: {', '.join(unknown)}. Choose available IDs in the role panel or adjust this provider in Magpie.")
+            self.run(["provider", "models", provider_id, *["+" + model for model in sorted(models)]], timeout=120)
         self.run(["sync"], timeout=120)
 
     def ensure_gateway(self):
@@ -561,6 +571,7 @@ def configure(home, magpie, apply=False):
     backup = ConfigurationBackup(home)
     providers_path = magpie_home() / "providers.json"
     providers_before = providers_path.read_bytes() if providers_path.exists() else None
+    providers = provider_state()
     try:
         magpie.select_models(preferences)
         model = magpie.connect_codex(home)
@@ -576,7 +587,7 @@ def configure(home, magpie, apply=False):
         lead["multi_agent_tools_in_code_mode"] = True
         required = {
             role["model"] for role in preferences["roles"].values()
-            if role["model"].partition("/")[0] in MAGPIE_PRESETS.values()
+            if connected_provider(role["model"], providers)
         }
         missing = sorted(required - set(by_slug))
         if missing:
@@ -652,6 +663,6 @@ def status(home, magpie=None):
         "available_models": list(models),
         "missing_models": sorted({
             role["model"] for role in roles["roles"].values()
-            if role["model"].partition("/")[0] in MAGPIE_PRESETS.values() and role["model"] not in models
+            if connected_provider(role["model"], providers) and role["model"] not in models
         }),
     }

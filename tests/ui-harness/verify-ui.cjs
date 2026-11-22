@@ -25,16 +25,19 @@ let browser;
     writer: ['Gemini', 'google/gemini-3.5-flash'],
     executor: ['OpenAI', 'gpt-6.2-sol'],
   };
-  const modelChoices = Object.fromEntries(Object.entries(alternatives).map(([role, [provider, model]]) => [role, {
-    provider,
-    options: [roles.roles[role].model, model],
+  const modelGroups = Object.entries(alternatives).map(([role, [label, model]]) => ({
+    label, options: [roles.roles[role].model, model],
+  }));
+  const connectedChoices = (groups) => Object.fromEntries(Object.keys(roles.roles).map(role => [role, {
+    groups, options: groups.flatMap(group => group.options),
     retained_model: null,
-    needs_sync: role === 'researcher' ? [model] : [],
+    needs_sync: groups.flatMap(group => group.options).filter(model => model.startsWith('qwen-cn/') || model === alternatives.researcher[1]),
   }]));
+  const modelChoices = connectedChoices(modelGroups);
   const state = {
     credentials: providers, model_catalog: true, magpie_installed: true, magpie_version: "0.1.4656",
     magpie_compatible: true, v2_configured: true, missing_models: [],
-    roles, model_choices: modelChoices,
+    roles, model_choices: connectedChoices([modelGroups.at(-1)]), provider_presets: { "qwen-cn": "Qwen（中国区）" },
   };
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1100, height: 960 } });
@@ -64,14 +67,14 @@ let browser;
   </script></body>`);
   await page.locator('#app').evaluate((frame, content) => { frame.srcdoc = content; }, html);
   const frame = page.frames().find((item) => item !== page.mainFrame());
-  await frame.waitForSelector('.role[data-role="researcher"]');
-  assert.equal(await frame.locator('#roles select[name="model"]').count(), Object.keys(alternatives).length);
+  await frame.waitForSelector('.role[data-role="executor"]');
+  assert.equal(await frame.locator('#roles select[name="model"]').count(), 1);
   assert.equal(await frame.locator('#roles input[name="model"]').count(), 0);
-  for (const [role, choice] of Object.entries(modelChoices)) {
-    const options = await frame.locator(`.role[data-role="${role}"] select[name="model"] option`)
-      .evaluateAll((items) => items.map((option) => option.value));
-    assert.deepEqual(options, choice.options);
-  }
+  assert.equal(await frame.locator('.role[data-role="builder"]').count(), 0);
+  await frame.getByText('添加供应商', { exact: true }).click();
+  await frame.locator('#provider-preset').selectOption('qwen-cn');
+  await frame.locator('#add-provider-key').click();
+  await frame.getByText('添加供应商', { exact: true }).click();
   const controlContrast = async () => frame.locator('input, select, select option, textarea').evaluateAll((controls) => {
     function luminance(color) {
       const channels = color.match(/\d+/g).slice(0, 3).map((value) => Number(value) / 255);
@@ -106,7 +109,24 @@ let browser;
   await glm.getByRole('combobox').selectOption('api');
   await glm.getByRole('button', { name: '从环境变量导入' }).click();
   assert.equal(await frame.locator('#configure').isVisible(), false);
-  assert.equal(await frame.locator('#key-link').isVisible(), true);
+  const qwen = {label: 'Qwen', options: ['qwen-cn/qwen-model']};
+  await page.evaluate((choices) => {
+    window.mockState.credentials['magpie:qwen-cn'] = {label: 'Qwen', configured: true};
+    window.mockState.provider_presets = {};
+    window.mockState.model_choices = choices;
+  }, connectedChoices([qwen, modelGroups.at(-1)]));
+  await frame.locator('#refresh').click();
+  await frame.getByText('给已接入模型分配职责', {exact: true}).click();
+  await frame.locator('#role-slot').selectOption('builder');
+  await frame.locator('#role-model').selectOption(qwen.options[0]);
+  await frame.locator('#assign-role').click();
+  assert.equal(await frame.locator('.role[data-role="builder"] select[name="model"]').inputValue(), qwen.options[0]);
+  await frame.locator('#save-roles').click();
+  await frame.locator('#notice').filter({ hasText: '分工预设已保存' }).waitFor();
+  await page.evaluate(({choices, previousRoles}) => {
+    window.mockState.model_choices = choices;
+    window.mockState.roles = previousRoles;
+  }, {choices: modelChoices, previousRoles: roles});
   await page.evaluate(() => {
     for (const p of Object.values(window.mockState.credentials)) p.configured = true;
     window.mockState.v2_configured = false;
@@ -158,6 +178,7 @@ let browser;
   const calls = await page.evaluate(() => window.calls);
   const imports = calls.filter((call) => call.params?.name === 'import_credential').map((call) => call.params.arguments);
   assert.deepEqual(imports, [
+    { provider: 'qwen-cn', source: 'prompt' },
     { provider: 'deepseek', source: 'environment' },
     { provider: 'kimi', source: 'prompt' },
     { provider: 'glm', source: 'environment', glm_plan: 'api' },
@@ -177,9 +198,10 @@ let browser;
     for (const provider of Object.values(window.mockState.credentials)) provider.configured = true;
   });
   await frame.locator('#refresh').click();
-  await frame.getByText('4 / 4 已接入 Magpie', { exact: true }).waitFor();
+  await frame.getByText('5 家已接入 Magpie', { exact: true }).waitFor();
   assert.equal(await frame.locator('#glm-plan').count(), 0);
   assert.equal(await frame.locator('#providers button').count(), 0);
+  assert.equal(await frame.getByText('添加供应商', {exact: true}).isVisible(), true);
   await page.close();
   await browser.close();
   if (errors.length) throw new Error(errors.join('\n'));

@@ -2,6 +2,10 @@ const byId = (id) => document.getElementById(id);
 const effortOptions = [
   ["low", "低"], ["medium", "中"], ["high", "高"], ["xhigh", "很高"], ["max", "最高"],
 ];
+const roleTitles = {
+  researcher: "资料检索", builder: "代码构建", reviewer: "方案与审核",
+  writer: "写作与视觉", executor: "执行与验证",
+};
 const pending = new Map();
 let requestId = 0;
 let state = null;
@@ -78,9 +82,17 @@ function renderProviders() {
   container.replaceChildren();
   const entries = Object.entries(state.credentials || {});
   const ready = entries.filter(([, provider]) => provider.configured).length;
-  byId("ready-count").textContent = `${ready} / ${entries.length} 已接入 Magpie`;
+  byId("ready-count").textContent = ready + " 家已接入 Magpie";
   byId("ready-count").classList.toggle("ready", ready === entries.length);
   byId("credential-help").hidden = ready === entries.length;
+  const preset = byId("provider-preset");
+  const picked = preset.value;
+  const options = Object.entries(state.provider_presets || {}).sort((a, b) => a[1].localeCompare(b[1]));
+  preset.replaceChildren(new Option(options.length ? "选择供应商" : "没有可添加的预设", ""),
+    ...options.map(([id, label]) => new Option(label, id)));
+  if (options.some(([id]) => id === picked)) preset.value = picked;
+  preset.disabled = !options.length;
+  byId("add-provider-key").disabled = !preset.value;
   for (const [name, provider] of entries) {
     const row = element("div", "provider");
     row.appendChild(element("strong", "provider-name", provider.label));
@@ -115,13 +127,12 @@ function hasPendingModels(preferences) {
 function renderNativeStatus() {
   const preferences = rolePreferences();
   const needsSync = hasPendingModels(preferences);
-  const selectedProviders = new Set(Object.values(preferences.roles).map(role => role.model.split("/")[0]));
-  const missingKeys = Object.values(state.credentials).filter(item =>
-    !item.configured && selectedProviders.has(item.provider_id));
   const status = byId("v2-status");
   const configured = state.v2_configured;
-  const ready = configured && !needsSync && !missingKeys.length;
-  status.textContent = missingKeys.length ? `待接入 ${missingKeys.map(item => item.label).join("、")}`
+  const hasExternalRole = Object.entries(preferences.roles).some(([key, role]) =>
+    role.model.includes("/") && state.model_choices[key].options.includes(role.model));
+  const ready = configured && !needsSync;
+  status.textContent = !configured && !hasExternalRole ? "请先接入供应商并分配模型"
     : !configured ? "尚未启用原生子代理" : needsSync ? "所选模型待同步"
     : restartPending ? "配置已更新，请重启 Codex" : "原生配置已就绪";
   const symbol = byId("native-symbol");
@@ -129,10 +140,9 @@ function renderNativeStatus() {
   symbol.classList.toggle("ready", ready);
   byId("native-details").classList.toggle("compact", ready);
   const action = byId("configure");
-  byId("key-link").hidden = !missingKeys.length;
-  action.hidden = ready || missingKeys.length > 0;
+  action.hidden = ready || !hasExternalRole;
   action.textContent = needsSync ? "同步所选模型" : "启用原生子代理";
-  byId("rewrite").hidden = !ready;
+  byId("rewrite").hidden = !ready || !hasExternalRole;
   const cli = state.magpie_version ? `版本 ${state.magpie_version}` : state.magpie_installed ? "版本未识别" : "未检测到";
   byId("cli-detail").textContent = state.magpie_compatible ? cli : `${cli}。下次写入配置时将准备兼容版本。`;
   byId("catalog-detail").textContent = !state.model_catalog ? "未找到本地目录"
@@ -146,7 +156,7 @@ async function importCredential(provider, source, button) {
     const args = { provider, source };
     if (provider === "glm") args.glm_plan = byId("glm-plan").value;
     const result = await callTool("import_credential", args);
-    report(result.message || "这家供应商已在 Magpie 中配置。请刷新状态。");
+    report(result.window_opened ? "请在本机密码窗口完成导入，然后点击「刷新状态」。" : "这家供应商已在 Magpie 中配置。请刷新状态。");
   } catch (error) {
     report(error.message, true);
   } finally {
@@ -159,21 +169,24 @@ function renderRoles(preferences) {
   const expandedRoles = new Set([...container.querySelectorAll(".role details[open]")].map((details) =>
     details.closest(".role").dataset.role));
   container.replaceChildren();
+  const hiddenRoles = [];
   for (const [key, role] of Object.entries(preferences.roles)) {
     const group = state.model_choices[key];
+    if (!group.options.includes(role.model)) {
+      hiddenRoles.push([key, roleTitles[key]]);
+      continue;
+    }
     const card = element("article", "role");
     card.dataset.role = key;
     const title = element("div", "role-title");
-    title.appendChild(element("h3", "", group.provider));
+    title.appendChild(element("h3", "", roleTitles[key]));
     title.appendChild(element("span", "role-purpose", role.responsibility));
     card.appendChild(title);
 
-    const choices = [...new Set([role.model, ...group.options])].map((id) => {
-      const retained = id === group.retained_model || !group.options.includes(id);
-      return [id, retained ? `${id} · 现有选择` : id.replace(/^[^/]+\//, "")];
-    });
-    const model = selectControl("model", role.model, choices);
-    model.setAttribute("aria-label", `${group.provider} 型号`);
+    const model = element("select");
+    model.name = "model";
+    fillModelChoices(model, group, role.model);
+    model.setAttribute("aria-label", roleTitles[key] + "型号");
     const modelField = element("div", "model-field");
     const note = element("a", "model-note", "此型号需要同步到原生 V2");
     note.href = "#native-heading";
@@ -210,7 +223,52 @@ function renderRoles(preferences) {
     card.appendChild(settings);
     container.appendChild(card);
   }
+  const slot = byId("role-slot");
+  const selectedSlot = slot.value;
+  slot.replaceChildren(...hiddenRoles.map(([id, label]) => new Option(label, id)));
+  if (hiddenRoles.some(([id]) => id === selectedSlot)) slot.value = selectedSlot;
+  const hasConnectedModels = Object.values(state.model_choices).some(group =>
+    group.options.some(model => model.includes("/")));
+  byId("role-add").hidden = !hiddenRoles.length || !hasConnectedModels;
+  if (!byId("role-add").hidden) updateRoleAssignment();
 }
+
+function fillModelChoices(select, group, value = "") {
+  select.replaceChildren();
+  for (const provider of group.groups) {
+    const choices = element("optgroup");
+    choices.label = provider.label;
+    for (const id of provider.options) {
+      const name = id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
+      const label = provider.label + " · " + name;
+      choices.appendChild(new Option(id === group.retained_model ? label + "（已保存）" : label, id));
+    }
+    select.appendChild(choices);
+  }
+  if (value) select.value = value;
+}
+
+function updateRoleAssignment() {
+  fillModelChoices(byId("role-model"), state.model_choices[byId("role-slot").value]);
+}
+
+byId("role-slot").addEventListener("change", updateRoleAssignment);
+byId("assign-role").addEventListener("click", () => {
+  const draft = rolePreferences();
+  const key = byId("role-slot").value;
+  draft.roles[key] = { ...draft.roles[key], model: byId("role-model").value };
+  renderRoles(draft);
+  renderNativeStatus();
+  byId("save-roles").disabled = !rolesEdited(draft);
+  byId("roles").querySelector('[data-role="' + key + '"] select').focus();
+});
+
+byId("provider-preset").addEventListener("change", () => {
+  byId("add-provider-key").disabled = !byId("provider-preset").value;
+});
+byId("add-provider-key").addEventListener("click", (event) => {
+  importCredential(byId("provider-preset").value, "prompt", event.currentTarget);
+});
 
 function field(text, control) {
   const label = element("label", "field");
@@ -231,7 +289,7 @@ function selectControl(name, value, choices) {
 }
 
 function rolePreferences() {
-  const roles = {};
+  const roles = { ...state.roles.roles };
   for (const card of byId("roles").querySelectorAll(".role")) {
     const values = {};
     for (const name of ["label", "model", "responsibility", "effort"]) {

@@ -36,6 +36,8 @@ codex plugin add mygo@mygo
 
 默认让 **DeepSeek** 查日志、找资料，**GLM** 写代码草案，**Luna** 改文件、跑测试，**Kimi** 做方案和复核，**Gemini** 写文案、看设计。想换型号或职责，发送 `$mygo 打开 MYGO 设置`，在「模型与分工」里选好后点「保存分工」。
 
+要用 Qwen 等其他模型，先在「供应商密钥」里点「添加供应商」，填完密钥后刷新。再从已接入的型号里选一个分配职责。需要时，点「同步所选模型」。
+
 交给外部模型的材料会发给对应供应商。只想分享一段日志时，可以在请求里写明「只把这段日志发给 DeepSeek」。
 
 [旧版 PowerShell 工作流](mygo/references/legacy-workflow.md) · [安全问题反馈](SECURITY.md) · [代码许可证](LICENSE)

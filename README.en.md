@@ -34,6 +34,8 @@ Start a request with `$mygo`. Let Codex choose the team, or name the models you 
 
 By default, **DeepSeek** searches logs and sources, **GLM** drafts code, **Luna** edits files and runs tests, **Kimi** plans and reviews, and **Gemini** writes and gives design feedback. To change a model or its role, send `$mygo open MYGO settings`, make your selections under **模型与分工**, and click **保存分工**.
 
+To use another provider such as Qwen, open **供应商密钥**, choose **添加供应商**, and refresh the panel after adding your key. Pick a connected model for a role and sync the selected models when prompted.
+
 External models receive the material assigned to them. To limit what you share, say so in the request, for example “Send only this log excerpt to DeepSeek.”
 
 [Legacy PowerShell workflow](mygo/references/legacy-workflow.md) · [Report a security issue](SECURITY.md) · [Code license](LICENSE)

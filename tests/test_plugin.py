@@ -151,6 +151,9 @@ class ManifestAndProtocolTests(IsolatedCase):
     def test_structured_settings_and_role_preferences(self):
         instance = mygo_server.Server(self.home)
         initial = instance.call("settings.read", {})
+        self.assertNotIn("researcher.model", initial["values"])
+        self.write_providers()
+        initial = instance.call("settings.read", {})
         self.assertIn({"kind": "tool", "tool": "show_settings"}, initial["layout"][0]["items"])
         self.assertEqual(initial["values"]["researcher.model"], "deepseek/deepseek-flash")
         updated = instance.call("settings.update", {"set": {
@@ -188,14 +191,45 @@ class ManifestAndProtocolTests(IsolatedCase):
         result = instance.call("settings.update", {"set": {"researcher.model": "deepseek/saved-preview"}})
         model_choices = instance.call("read_settings", {})["model_choices"]
         deepseek_choices = model_choices["researcher"]
-        self.assertEqual(deepseek_choices["options"], [
+        self.assertEqual(deepseek_choices["options"][:3], [
             "deepseek/saved-preview", "deepseek/deepseek-flash", "deepseek/deepseek-v4-pro",
         ])
         self.assertEqual(deepseek_choices["retained_model"], "deepseek/saved-preview")
-        self.assertEqual(deepseek_choices["needs_sync"], ["deepseek/saved-preview", "deepseek/deepseek-v4-pro"])
+        self.assertEqual(deepseek_choices["needs_sync"][:2], ["deepseek/saved-preview", "deepseek/deepseek-v4-pro"])
         self.assertEqual(result["schema"]["properties"]["researcher.model"]["enum"], deepseek_choices["options"])
-        self.assertEqual(model_choices["executor"]["options"], ["gpt-6-luna", "gpt-6.2-sol"])
+        self.assertEqual(model_choices["executor"]["options"][-2:], ["gpt-6-luna", "gpt-6.2-sol"])
         self.assertNotIn("configured-locally", json.dumps(model_choices))
+
+    def test_connected_qwen_is_selectable_and_unconfigured_roles_stay_saved(self):
+        self.write_providers([
+            {"id": "qwen-cn-2", "name": "Qwen", "preset": "qwen-cn", "key": "test-key",
+             "models": ["qwen-model"]},
+            {"id": "deepseek", "name": "DeepSeek", "preset": "deepseek", "models": ["deepseek-flash"]},
+        ])
+        instance = mygo_server.Server(self.home)
+        state = instance.call("read_settings", {})
+        self.assertTrue(state["credentials"]["magpie:qwen-cn-2"]["configured"])
+        self.assertFalse(state["model_choices"]["researcher"]["active"])
+        self.assertIn("qwen-cn-2/qwen-model", state["model_choices"]["researcher"]["options"])
+        self.assertNotIn("deepseek/deepseek-flash", state["model_choices"]["researcher"]["options"])
+        preferences = state["roles"]
+        preferences["roles"]["builder"]["model"] = "qwen-cn-2/qwen-model"
+        instance.call("save_roles", {"preferences": preferences})
+        state = instance.call("read_settings", {})
+        self.assertEqual(state["roles"]["roles"]["researcher"]["model"], "deepseek/deepseek-flash")
+        self.assertTrue(state["model_choices"]["builder"]["active"])
+        fake = FakeMagpie()
+        fake.select_models(state["roles"])
+        self.assertEqual(fake.calls, [["provider", "models", "qwen-cn-2", "+qwen-model"], ["sync"]])
+
+    def test_only_key_only_presets_are_offered_for_local_import(self):
+        fake = FakeMagpie()
+        with mock.patch.object(fake, "run", return_value=(
+            "  vendors\n"
+            "  Qwen (China)                  qwen-cn         magpie provider add qwen-cn <key>\n"
+            "  Vertex AI                     vertex          magpie provider add vertex project=<id>\n"
+        )):
+            self.assertEqual(fake.key_presets(), {"qwen-cn": "Qwen (China)"})
 
     def test_credential_window_launch_has_no_secret_or_blocking_wait(self):
         instance = mygo_server.Server(self.home)
@@ -231,6 +265,33 @@ class CredentialTests(IsolatedCase):
             with self.assertRaises(RuntimeError):
                 FakeMagpie().save_credential("deepseek", marker)
         self.assertEqual((self.magpie / "providers.json").read_bytes(), original)
+
+    def test_new_preset_import_keeps_key_out_of_commands(self):
+        path = self.write_providers([])
+        marker = "test-only-qwen-key"
+
+        class QwenMagpie(FakeMagpie):
+            def key_presets(self):
+                return {"qwen-cn": "Qwen"}
+
+            def run(self, args, secret=None, **kwargs):
+                if args[:2] == ["provider", "add"]:
+                    path.write_text(json.dumps({"providers": [{
+                        "id": "qwen-cn", "preset": "qwen-cn", "key": mygo_setup.PENDING_KEY,
+                        "models": ["test-model"],
+                    }]}), encoding="utf-8")
+                    return "Saved Qwen (qwen-cn)"
+                self.calls.append(args)
+                self.stdin.append(secret)
+                data = json.loads(path.read_text(encoding="utf-8"))
+                data["providers"][0]["keys"] = [{"key": secret.strip()}]
+                path.write_text(json.dumps(data), encoding="utf-8")
+
+        fake = QwenMagpie()
+        self.assertTrue(fake.save_credential("qwen-cn", marker)["saved"])
+        self.assertEqual(fake.calls, [["provider", "keys", "qwen-cn", "add", "-"]])
+        self.assertEqual(fake.stdin, [marker + "\n"])
+        self.assertTrue(mygo_setup.credential_status()["magpie:qwen-cn"]["configured"])
 
     def test_password_helper_never_prints_or_passes_secret_in_arguments(self):
         marker = "test-only-password-entry"
@@ -306,7 +367,7 @@ class ConfigurationTests(IsolatedCase):
         preferences["roles"]["researcher"]["model"] = "deepseek/deepseek-v4-pro"
         fake = FakeMagpie()
         fake.select_models(preferences)
-        self.assertIn(["provider", "models", "deepseek", "deepseek-v4-pro"], fake.calls)
+        self.assertIn(["provider", "models", "deepseek", "+deepseek-v4-pro"], fake.calls)
         self.assertIn(["sync"], fake.calls)
         self.assertFalse(any(call[:2] == ["provider", "refresh"] for call in fake.calls))
 

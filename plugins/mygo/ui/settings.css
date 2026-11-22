@@ -67,7 +67,6 @@ main { display: grid; gap: 16px; }
 .panel-note { margin-top: 12px; }
 .native-overview { justify-content: flex-start; }
 .native-overview :is(button, a) { margin-left: auto; }
-#key-link { color: var(--accent); text-underline-offset: 3px; }
 #native-symbol {
   display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%;
   background: var(--alert-soft); color: var(--alert); font-size: 24px; font-weight: 650;
@@ -153,3 +152,14 @@ button.primary:disabled { background: var(--field); color: var(--muted); border-
 @media (max-width: 315px) {
   .field-row, .provider-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+#provider-add { margin-bottom: 14px; }
+#role-add { margin-top: 12px; }
+.inline-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+  padding: 8px 0;
+}
+.inline-fields .field { min-width: min(100%, 190px); }

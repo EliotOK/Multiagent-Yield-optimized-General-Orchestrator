@@ -20,7 +20,6 @@
           <h2 id="native-heading">原生子代理 · V2</h2>
           <p id="v2-status" role="status">正在读取配置…</p>
         </div>
-        <a id="key-link" href="#providers-heading" hidden>设置供应商密钥</a>
         <button id="configure" class="primary" type="button" hidden disabled></button>
       </div>
       <details id="native-details">
@@ -44,12 +43,28 @@
       <div id="roles" class="role-list">
         <p class="hint">正在加载模型和分工…</p>
       </div>
+      <details id="role-add" hidden>
+        <summary>给已接入模型分配职责</summary>
+        <div class="inline-fields">
+          <label class="field"><span>职责</span><select id="role-slot"></select></label>
+          <label class="field"><span>型号</span><select id="role-model"></select></label>
+          <button id="assign-role" class="secondary" type="button">加入分工</button>
+        </div>
+      </details>
     </section>
     <section class="panel" aria-labelledby="providers-heading">
       <div class="section-heading">
         <h2 id="providers-heading">供应商密钥</h2>
         <span id="ready-count" class="status-pill">检测中</span>
       </div>
+      <details id="provider-add">
+        <summary>添加供应商</summary>
+        <div class="inline-fields">
+          <label class="field"><span>Magpie 预设</span><select id="provider-preset" disabled></select></label>
+          <button id="add-provider-key" class="secondary" type="button" disabled>打开密码窗口</button>
+        </div>
+        <p class="hint">自定义地址或其他登录方式可在 Magpie 的「供应商 → 添加供应商」中配置，完成后刷新此页。</p>
+      </details>
       <div id="providers" class="provider-list"></div>
       <template id="glm-plan-field">
         <div class="provider-plan">

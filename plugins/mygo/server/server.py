@@ -3,13 +3,14 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import threading
 
 from mygo_setup import (
-    DEFAULT_ROLES, EFFORTS, Magpie, MINIMUM_MAGPIE, PROVIDERS,
-    configure, credential_status, find_codex,
+    DEFAULT_ROLES, EFFORTS, Magpie, MAGPIE_PRESETS, MINIMUM_MAGPIE, PROVIDERS,
+    configure, credential_status, find_codex, provider_state,
     install_magpie, managed_magpie_path, load_roles, role_model_choices, save_roles, status,
 )
 
@@ -49,7 +50,7 @@ PREFERENCES_PROPS = {
     "preferences": {"type": "object", "properties": {"version": {"type": "integer", "const": 1}, "roles": {"type": "object", "properties": ROLES_PROPS, "required": list(ROLES_PROPS), "additionalProperties": False}}, "required": ["version", "roles"], "additionalProperties": False},
 }
 PROVIDER_PROPS = {
-    "provider": {"type": "string", "enum": list(PROVIDERS)},
+    "provider": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,79}$"},
     "source": {"type": "string", "enum": ["environment", "prompt"]},
     "glm_plan": {"type": "string", "enum": ["coding", "api"]},
 }
@@ -79,6 +80,8 @@ def setting_schema(home, preferences):
     }]
     for key, role in preferences["roles"].items():
         prefix = f"{key}."
+        if not choices[key]["active"]:
+            continue
         for field, title in (("label", "Display name"), ("model", "Model"), ("responsibility", "Default responsibility"), ("effort", "Reasoning effort")):
             properties[prefix + field] = {"type": "string", "title": title}
             if field == "effort":
@@ -95,10 +98,21 @@ class Server:
         self.home = home.expanduser().resolve()
         self.magpie = Magpie()
         self.setup_lock = threading.Lock()
-        self.credential_lock = threading.Lock()
+        self.credential_process = None
 
     def read(self):
         result = status(self.home, self.magpie)
+        presets = {"qwen": "Qwen", "qwen-cn": "Qwen（中国区）",
+                   "qwen-token-plan": "Qwen Token Plan", "bailian-token-plan": "百炼 Token Plan"}
+        if self.magpie.executable:
+            try:
+                presets.update(self.magpie.key_presets())
+            except (RuntimeError, OSError, subprocess.SubprocessError):
+                pass
+        existing = provider_state()
+        in_use = {item["preset"] for item in existing.values() if item["configured"]}
+        excluded = in_use | set(MAGPIE_PRESETS.values()) | set(PROVIDERS)
+        result["provider_presets"] = {key: label for key, label in presets.items() if key not in excluded}
         result["platform"] = os.name
         result["preferences_path"] = str(self.home / "mygo" / "preferences.json")
         result["codex_available"] = bool(find_codex())
@@ -116,12 +130,18 @@ class Server:
         if os.name != "nt":
             raise RuntimeError("Interactive credential import currently supports Windows. Add the provider in Magpie's own interface on this platform.")
         provider = args["provider"]
-        if provider not in PROVIDERS or args["source"] not in {"environment", "prompt"}:
-            raise ValueError("Unknown provider or credential source.")
-        with self.credential_lock:
-            if credential_status()[provider]["configured"]:
+        if not isinstance(provider, str) or not re.fullmatch(PROVIDER_PROPS["provider"]["pattern"], provider):
+            raise ValueError("Invalid provider preset ID.")
+        if args["source"] not in {"environment", "prompt"} or (args["source"] == "environment" and provider not in PROVIDERS):
+            raise ValueError("Unknown credential source for this provider.")
+        with self.setup_lock:
+            self.check_credential_window()
+            preset = MAGPIE_PRESETS.get(provider, provider)
+            if any(item["configured"] and item["preset"] == preset for item in provider_state().values()):
                 return {"provider": provider, "saved": False, "reason": "already_configured"}
             self.ensure_magpie()
+            if provider not in PROVIDERS and provider not in self.magpie.key_presets():
+                raise ValueError("This preset needs to be configured in Magpie directly.")
             self.magpie.ensure_gateway()
             command = [
                 "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
@@ -132,8 +152,12 @@ class Server:
             ]
             environment = os.environ.copy()
             environment["CODEX_HOME"] = str(self.home)
-            subprocess.Popen(command, env=environment)
+            self.credential_process = subprocess.Popen(command, env=environment, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
             return {"provider": provider, "window_opened": True, "message": "Complete the local password window, then refresh this panel."}
+
+    def check_credential_window(self):
+        if self.credential_process is not None and self.credential_process.poll() is None:
+            raise RuntimeError("请先完成或关闭已打开的密钥窗口。")
 
     def call(self, name, args):
         if name == "show_settings":
@@ -162,6 +186,7 @@ class Server:
             return self.import_credential(args)
         if name == "configure_native":
             with self.setup_lock:
+                self.check_credential_window()
                 self.ensure_magpie()
                 self.magpie.ensure_gateway()
                 result = configure(self.home, self.magpie, apply=True)
