@@ -45,6 +45,7 @@ let browser;
   page.on('pageerror', (error) => errors.push(error.message));
   await page.setContent(`<body style="margin:0"><iframe id="app" style="width:100%;height:900px;border:0"></iframe><script>
     window.calls = [];
+    window.availableUpdate = false;
     window.mockState = ${JSON.stringify(state)};
     window.addEventListener('message', (event) => {
       const m = event.data;
@@ -52,6 +53,10 @@ let browser;
       window.calls.push(m);
       let result = {};
       if (m.method === 'ui/initialize') result = { hostContext: { theme: 'dark' } };
+      if (m.params?.name === 'check_update') {
+        result = { structuredContent: { current: '0.3.4', latest: window.availableUpdate ? '0.3.5' : '0.3.4', update_available: window.availableUpdate } };
+      }
+      if (m.params?.name === 'update_plugin') result = { structuredContent: { installed: '0.3.5' } };
       if (m.method === 'tools/call' && m.params.name === 'read_settings') result = { structuredContent: window.mockState };
       if (m.method === 'tools/call' && m.params.name === 'save_roles') {
         window.mockState.roles = m.params.arguments.preferences;
@@ -68,6 +73,17 @@ let browser;
   await page.locator('#app').evaluate((frame, content) => { frame.srcdoc = content; }, html);
   const frame = page.frames().find((item) => item !== page.mainFrame());
   await frame.waitForSelector('.role[data-role="executor"]');
+  await frame.getByRole('button', {name: '检查更新'}).click();
+  await frame.locator('#update-status').filter({hasText: '已是最新版'}).waitFor();
+  assert.equal(await frame.locator('#apply-update').isVisible(), false);
+  await page.evaluate(() => { window.availableUpdate = true; });
+  await frame.getByRole('button', {name: '检查更新'}).click();
+  await frame.locator('#update-status').filter({hasText: '可更新到 0.3.5'}).waitFor();
+  assert.equal(await page.evaluate(() => window.calls.some(call => call.params?.name === 'update_plugin')), false);
+  await frame.getByRole('button', {name: '更新 MYGO'}).click();
+  await frame.locator('#update-status').filter({hasText: '已安装 MYGO 0.3.5'}).waitFor();
+  await frame.locator('#update').evaluate(el => { el.hidden = true; });
+
   assert.equal(await frame.locator('#roles select[name="model"]').count(), 1);
   assert.equal(await frame.locator('#roles input[name="model"]').count(), 0);
   assert.equal(await frame.locator('.role[data-role="builder"]').count(), 0);

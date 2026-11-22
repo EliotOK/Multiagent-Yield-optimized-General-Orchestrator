@@ -7,6 +7,8 @@ import re
 import subprocess
 import sys
 import threading
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from mygo_setup import (
     DEFAULT_ROLES, EFFORTS, Magpie, MAGPIE_PRESETS, MINIMUM_MAGPIE, PROVIDERS,
@@ -17,17 +19,18 @@ from mygo_setup import (
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
 URI = f"ui://mygo/settings-{VERSION}.html"
+UPDATE_MANIFEST = "https://raw.githubusercontent.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/main/plugins/mygo/plugin.json"
 LEGACY_URI = "ui://mygo/settings.html"
 MIME = "text/html;profile=mcp-app"
 
 
-def definition(name, description, properties=None, required=(), app=False, panel=False, mutating=False, title=None):
+def definition(name, description, properties=None, required=(), app=False, panel=False, mutating=False, title=None, network=False):
     result = {
         "name": name,
         "title": title or description.split(".")[0],
         "description": description,
         "inputSchema": {"type": "object", "properties": properties or {}, "required": list(required), "additionalProperties": False},
-        "annotations": {"readOnlyHint": not mutating, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+        "annotations": {"readOnlyHint": not mutating, "destructiveHint": False, "idempotentHint": True, "openWorldHint": network},
     }
     if app:
         result["_meta"] = {"ui": {"visibility": ["app"]}}
@@ -56,6 +59,8 @@ PROVIDER_PROPS = {
 }
 TOOLS = [
     definition("show_settings", "Open MYGO settings", panel=True, title="打开 MYGO 设置"),
+    definition("check_update", "Check the official MYGO marketplace for a newer version", app=True, network=True),
+    definition("update_plugin", "Upgrade MYGO using the configured Codex plugin marketplace", app=True, mutating=True, network=True),
     definition("read_settings", "Read secret-free MYGO provider readiness and role preferences", app=True),
     definition("import_credential", "Import a provider credential in a local password window. No secret is passed to this tool", PROVIDER_PROPS, ["provider", "source"], app=True, mutating=True),
     definition("configure_native", "Install a compatible Magpie CLI if needed and enable native V2 subagents", app=True, mutating=True),
@@ -91,6 +96,28 @@ def setting_schema(home, preferences):
             values[prefix + field] = role[field]
         groups.append({"kind": "group", "title": f"{key} · {role['label']}", "items": [{"kind": "property", "property": prefix + field} for field in ("label", "model", "responsibility", "effort")]})
     return {"schema": {"type": "object", "properties": properties, "required": list(properties)}, "values": values, "layout": groups}
+
+
+def release_version(manifest):
+    if isinstance(manifest, dict) and manifest.get("name") == "mygo":
+        version = manifest.get("version")
+        if isinstance(version, str) and re.fullmatch(r"[0-9]{1,8}(\.[0-9]{1,8}){2}", version):
+            return version
+    raise ValueError("无法识别 MYGO 的版本信息。")
+
+
+def check_update():
+    request = Request(UPDATE_MANIFEST, headers={"User-Agent": "MYGO-Setup", "Cache-Control": "no-cache"})
+    try:
+        with urlopen(request, timeout=12) as response:
+            latest = release_version(json.loads(response.read(65536)))
+    except (URLError, OSError, ValueError) as error:
+        raise RuntimeError("暂时无法检查 MYGO 更新。请稍后再试。") from error
+    return {
+        "current": VERSION,
+        "latest": latest,
+        "update_available": tuple(map(int, latest.split("."))) > tuple(map(int, VERSION.split("."))),
+    }
 
 
 class Server:
@@ -159,9 +186,42 @@ class Server:
         if self.credential_process is not None and self.credential_process.poll() is None:
             raise RuntimeError("请先完成或关闭已打开的密钥窗口。")
 
+    def update_plugin(self):
+        with self.setup_lock:
+            self.check_credential_window()
+            release = check_update()
+            if not release["update_available"]:
+                return release
+            executable = find_codex()
+            if not executable:
+                raise RuntimeError("未找到 Codex CLI。请更新 Codex 后重试。")
+            environment = dict(os.environ, CODEX_HOME=str(self.home), GIT_TERMINAL_PROMPT="0")
+            command = [executable, "plugin", "marketplace", "upgrade", "mygo", "--json"]
+            try:
+                result = subprocess.run(command, env=environment, capture_output=True,
+                                        text=True, encoding="utf-8", errors="replace", timeout=110)
+                report = json.loads(result.stdout)
+                if result.returncode or report["errors"] or not report["upgradedRoots"]:
+                    raise ValueError("Marketplace upgrade failed")
+                installed = release_version(json.loads(
+                    (Path(report["upgradedRoots"][0]) / "plugins/mygo/plugin.json").read_text(encoding="utf-8")
+                ))
+                cached = self.home / "plugins/cache/mygo/mygo" / installed / "plugin.json"
+                if release_version(json.loads(cached.read_text(encoding="utf-8"))) != installed:
+                    raise ValueError("Plugin cache version differs from marketplace")
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+                raise RuntimeError("未能确认更新完成。请在终端运行 codex plugin marketplace upgrade mygo 查看详情。") from error
+            if tuple(map(int, installed.split("."))) < tuple(map(int, release["latest"].split("."))):
+                raise RuntimeError("当前 MYGO 市场源还未提供这个版本。请核对市场源或稍后重试。")
+            return {**release, "installed": installed}
+
     def call(self, name, args):
         if name == "show_settings":
             return {"opened": True, "version": VERSION}
+        if name == "check_update":
+            return check_update()
+        if name == "update_plugin":
+            return self.update_plugin()
         if name == "read_settings":
             return self.read()
         if name == "settings.read":

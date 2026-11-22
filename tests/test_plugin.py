@@ -83,6 +83,39 @@ class IsolatedCase(unittest.TestCase):
         return path
 
 
+class UpdateTests(IsolatedCase):
+    def test_checks_published_version_without_running_upgrade(self):
+        manifest = io.BytesIO(json.dumps({"name": "mygo", "version": "0.10.0"}).encode())
+        with mock.patch.object(mygo_server, "urlopen", return_value=manifest) as fetch, \
+                mock.patch.object(mygo_server, "VERSION", "0.9.0"):
+            self.assertEqual(mygo_server.check_update(), {
+                "current": "0.9.0", "latest": "0.10.0", "update_available": True,
+            })
+        self.assertEqual(fetch.call_args.args[0].full_url, mygo_server.UPDATE_MANIFEST)
+
+    def test_update_uses_named_marketplace_and_verifies_installed_version(self):
+        version = "0.10.0"
+        marketplace = self.base / "marketplace"
+        for manifest in [marketplace / "plugins/mygo/plugin.json",
+                         self.home / "plugins/cache/mygo/mygo" / version / "plugin.json"]:
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({"name": "mygo", "version": version}), encoding="utf-8")
+        release = {"current": "0.9.0", "latest": version, "update_available": True}
+        process = subprocess.CompletedProcess([], 0, json.dumps({
+            "upgradedRoots": [str(marketplace)], "errors": [],
+        }), "")
+        instance = mygo_server.Server(self.home)
+        with mock.patch.object(mygo_server, "check_update", return_value=release), \
+                mock.patch.object(mygo_server, "find_codex", return_value="codex"), \
+                mock.patch.object(mygo_server.subprocess, "run", return_value=process) as run:
+            self.assertEqual(instance.update_plugin()["installed"], version)
+            self.assertEqual(run.call_args.args[0], ["codex", "plugin", "marketplace", "upgrade", "mygo", "--json"])
+            self.assertEqual(run.call_args.kwargs["env"]["CODEX_HOME"], str(self.home))
+            manifest.unlink()
+            with self.assertRaisesRegex(RuntimeError, "未能确认更新完成"):
+                instance.update_plugin()
+
+
 class ManifestAndProtocolTests(IsolatedCase):
     def test_plugin_discovery_files_and_secret_free_tool_schemas(self):
         manifest = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))

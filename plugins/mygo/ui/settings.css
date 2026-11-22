@@ -163,3 +163,22 @@ button.primary:disabled { background: var(--field); color: var(--muted); border-
   padding: 8px 0;
 }
 .inline-fields .field { min-width: min(100%, 190px); }
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.update-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.update-notice p { flex: 1 1 180px; }

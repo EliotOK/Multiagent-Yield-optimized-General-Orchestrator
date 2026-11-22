@@ -9,9 +9,16 @@
 <body>
   <header class="page-header">
     <h1><span class="wordmark">MYGO</span><span class="title-divider" aria-hidden="true"></span>设置</h1>
-    <button id="refresh" class="quiet" type="button" disabled>刷新状态</button>
+    <div class="header-actions">
+      <button id="check-update" class="quiet" type="button" disabled>检查更新</button>
+      <button id="refresh" class="quiet" type="button" disabled>刷新状态</button>
+    </div>
   </header>
   <div id="notice" class="notice" role="status" hidden></div>
+  <div id="update" class="update-notice" hidden>
+    <p id="update-status" role="status"></p>
+    <button id="apply-update" class="primary" type="button" hidden>更新 MYGO</button>
+  </div>
   <main>
     <section class="native" aria-labelledby="native-heading">
       <div class="native-overview">

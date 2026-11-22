@@ -367,12 +367,41 @@ function writeNative() {
 byId("configure").addEventListener("click", writeNative);
 byId("rewrite").addEventListener("click", writeNative);
 
+async function updateAction(apply) {
+  const check = byId("check-update");
+  const install = byId("apply-update");
+  const status = byId("update-status");
+  byId("update").hidden = false;
+  check.disabled = install.disabled = true;
+  install.hidden = true;
+  status.textContent = apply ? "正在下载并安装 MYGO 更新…" : "正在检查 MYGO 版本…";
+  try {
+    const result = await callTool(apply ? "update_plugin" : "check_update");
+    if (result.installed) {
+      status.textContent = "已安装 MYGO " + result.installed + "。请关闭并重新打开设置页。如果仍显示旧版，请重新打开 Codex。";
+    } else if (result.update_available) {
+      status.textContent = "当前 " + result.current + "，可更新到 " + result.latest + "。";
+      install.hidden = false;
+    } else {
+      status.textContent = "MYGO " + result.current + " 已是最新版。";
+    }
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    check.disabled = install.disabled = false;
+  }
+}
+
+byId("check-update").addEventListener("click", () => updateAction(false));
+byId("apply-update").addEventListener("click", () => updateAction(true));
+
 bridgeReady = rpc("ui/initialize", {
   appInfo: { name: "mygo-settings", version: byId("plugin-version").textContent },
   appCapabilities: {},
   protocolVersion: "2026-01-26",
 }).then((result) => {
   updateTheme(result?.hostContext?.theme);
+  byId("check-update").disabled = false;
   notify("ui/notifications/initialized", {});
   return result;
 });

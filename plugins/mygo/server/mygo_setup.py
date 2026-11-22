@@ -524,6 +524,11 @@ def install_magpie(destination, version=MAGPIE_VERSION):
 def find_codex():
     if os.environ.get("MYGO_CODEX_EXECUTABLE"):
         return os.environ["MYGO_CODEX_EXECUTABLE"]
+    if os.name == "nt":
+        desktop_root = Path.home() / "AppData/Local/OpenAI/Codex/bin"
+        bundled = list(desktop_root.glob("*/codex.exe"))
+        if bundled:
+            return str(max(bundled, key=lambda executable: executable.stat().st_mtime))
     return shutil.which("codex.exe") or shutil.which("codex")
 
 

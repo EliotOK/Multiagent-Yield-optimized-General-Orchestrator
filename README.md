@@ -24,7 +24,7 @@ codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestr
 codex plugin add mygo@mygo
 ```
 
-安装后重新打开 Codex，发送 `$mygo 打开 MYGO 设置`。按面板提示接入供应商、启用原生子代理。以后更新只需运行 `codex plugin marketplace upgrade mygo`。
+安装后重新打开 Codex，发送 `$mygo 打开 MYGO 设置`。按面板提示接入供应商、启用原生子代理。以后在设置页点「检查更新」，也可以运行 `codex plugin marketplace upgrade mygo`。
 
 </details>
 
