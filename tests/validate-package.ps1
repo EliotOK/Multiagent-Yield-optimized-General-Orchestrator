@@ -17,7 +17,7 @@ foreach ($legacySkillRoot in @(
     }
 }
 
-foreach ($relative in @('README.md', 'README.zh-CN.md')) {
+foreach ($relative in @('README.md', 'README.en.md', 'README.zh-CN.md', 'docs/images/mygo-cover.png')) {
     $path = Join-Path $RepositoryRoot $relative
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required bilingual repository file is missing: $path"
@@ -123,12 +123,11 @@ if ($forbidden) {
     throw 'Release privacy scan failed.'
 }
 
-$englishReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.md') -Raw -Encoding UTF8
-$chineseReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.zh-CN.md') -Raw -Encoding UTF8
-foreach ($requiredText in @('v0.1.0-beta.4', 'ProjectOnly', 'LunaOnly',
-        'security-regression.ps1', 'APPROVED_EXTERNAL', 'terra_readonly_fallback_worker',
-        'MYGO', 'Astra primary', 'Sol primary', 'deepseek-flash', 'codex plugin marketplace add',
-        'codex plugin add mygo@mygo')) {
+$englishReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.en.md') -Raw -Encoding UTF8
+$chineseReadme = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'README.md') -Raw -Encoding UTF8
+foreach ($requiredText in @('docs/images/mygo-cover.png', 'mygo/references/legacy-workflow.md',
+        'codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestrator',
+        'codex plugin add mygo@mygo', 'codex plugin marketplace upgrade mygo', '$mygo')) {
     if ($englishReadme -notmatch [regex]::Escape($requiredText) -or
         $chineseReadme -notmatch [regex]::Escape($requiredText)) {
         throw "Bilingual documentation parity check failed for: $requiredText"
