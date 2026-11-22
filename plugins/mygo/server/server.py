@@ -10,7 +10,7 @@ import threading
 from mygo_setup import (
     DEFAULT_ROLES, EFFORTS, Magpie, MINIMUM_MAGPIE, PROVIDERS,
     configure, credential_status, find_codex,
-    install_magpie, load_roles, role_model_choices, save_roles, status,
+    install_magpie, managed_magpie_path, load_roles, role_model_choices, save_roles, status,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,10 +108,7 @@ class Server:
                 return
         except (OSError, RuntimeError, subprocess.SubprocessError):
             pass
-        destination = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local")) / "MYGO" / "bin" / "magpie.exe"
-        if os.environ.get("MYGO_MAGPIE_EXECUTABLE"):
-            destination = Path(os.environ["MYGO_MAGPIE_EXECUTABLE"])
-        self.magpie.executable = install_magpie(destination)
+        self.magpie.executable = install_magpie(managed_magpie_path())
 
     def import_credential(self, args):
         if os.name != "nt":
@@ -185,7 +182,7 @@ class Server:
                 result = {
                     "protocolVersion": version if version in ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25") else "2025-06-18",
                     "capabilities": {"tools": {}, "resources": {}, "experimental": {"openai/settings": {"readTool": "settings.read", "updateTool": "settings.update"}}},
-                    "serverInfo": {"name": "mygo", "version": "0.3.0"},
+                    "serverInfo": {"name": "mygo", "version": "0.3.1"},
                     "instructions": "Use show_settings for local setup. Never request, accept, or return API keys. Provider import tools accept only a provider name and source. Role preferences contain no credentials.",
                 }
             elif method == "ping":

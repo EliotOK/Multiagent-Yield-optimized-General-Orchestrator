@@ -243,6 +243,44 @@ class CredentialTests(IsolatedCase):
 
 
 class ConfigurationTests(IsolatedCase):
+    def test_discovery_prefers_a_compatible_cli_and_reuses_it(self):
+        managed = mygo_setup.managed_magpie_path()
+        managed.touch()
+        path_cli = self.base / "path-magpie"
+        path_cli.touch()
+        with mock.patch.object(mygo_setup.shutil, "which", return_value=str(path_cli)), \
+                mock.patch.object(mygo_setup.Magpie, "version", autospec=True) as version, \
+                mock.patch.object(mygo_server, "install_magpie") as install:
+            version.side_effect = lambda cli: mygo_setup.MINIMUM_MAGPIE if cli.executable == str(managed) else (0, 1, 1)
+            instance = mygo_server.Server(self.home)
+            self.assertEqual(instance.magpie.executable, str(managed))
+            self.assertTrue(instance.read()["magpie_compatible"])
+            instance.ensure_magpie()
+            install.assert_not_called()
+            version.side_effect = lambda cli: mygo_setup.MINIMUM_MAGPIE if cli.executable == str(path_cli) else (0, 1, 1)
+            self.assertEqual(mygo_setup.find_magpie(), str(path_cli))
+
+    @unittest.skipUnless(os.name == "nt", "Windows installation paths")
+    def test_discovery_with_redirected_localappdata(self):
+        profile = self.base / "user"
+        managed = profile / "AppData/Local/MYGO/bin/magpie.exe"
+        managed.parent.mkdir(parents=True)
+        managed.touch()
+        with mock.patch.dict(os.environ, {"LOCALAPPDATA": str(self.base / "redirect"), "MYGO_MAGPIE_EXECUTABLE": ""}), \
+                mock.patch.object(Path, "home", return_value=profile), \
+                mock.patch.object(mygo_setup.shutil, "which", return_value=None), \
+                mock.patch.object(mygo_setup.Magpie, "version", return_value=mygo_setup.MINIMUM_MAGPIE):
+            self.assertEqual(mygo_setup.find_magpie(), str(managed))
+
+    def test_native_status_reads_active_toml_values(self):
+        config = self.home / "config.toml"
+        catalog = 'model_catalog_json = "mygo-magpie-v2-models.json"'
+        for text, enabled in [(catalog + "\n[features.multi_agent_v2]\nenabled = true", True),
+                              (catalog + "\n[features.multi_agent_v2]\nenabled = false", False),
+                              ("# " + catalog, False), ("[broken", False)]:
+            config.write_text(text, encoding="utf-8")
+            self.assertEqual(mygo_setup.status(self.home, FakeMagpie())["v2_configured"], enabled)
+
     def catalog(self):
         slugs = ["gpt-6.2-sol"] + [role["model"] for role in mygo_setup.DEFAULT_ROLES["roles"].values() if "/" in role["model"]]
         return {"models": [{"slug": slug, "multi_agent_version": "v2"} for slug in slugs]}

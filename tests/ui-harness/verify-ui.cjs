@@ -12,10 +12,10 @@ let browser;
     .replace('/* SETTINGS_CSS */', fs.readFileSync(path.join(plugin, 'ui/settings.css'), 'utf8'))
     .replace('/* SETTINGS_JS */', fs.readFileSync(path.join(plugin, 'ui/settings.js'), 'utf8'));
   const providers = {
-    deepseek: { label: 'DeepSeek', configured: false, environment: true },
-    kimi: { label: 'Kimi', configured: false, environment: false },
-    glm: { label: 'GLM', configured: false, environment: true },
-    gemini: { label: 'Gemini', configured: false, environment: false },
+    deepseek: { label: 'DeepSeek', provider_id: 'deepseek', configured: false, environment: true },
+    kimi: { label: 'Kimi', provider_id: 'moonshot-cn', configured: false, environment: false },
+    glm: { label: 'GLM', provider_id: 'zhipu', configured: false, environment: true },
+    gemini: { label: 'Gemini', provider_id: 'google', configured: false, environment: false },
   };
   const alternatives = {
     researcher: ['DeepSeek', 'deepseek/deepseek-v4-pro'],
@@ -31,8 +31,8 @@ let browser;
     needs_sync: role === 'researcher' ? [model] : [],
   }]));
   const state = {
-    credentials: providers, magpie_installed: false, magpie_version: null,
-    magpie_compatible: false, v2_configured: true, missing_models: [],
+    credentials: providers, model_catalog: true, magpie_installed: true, magpie_version: "0.1.4656",
+    magpie_compatible: true, v2_configured: true, missing_models: [],
     roles, model_choices: modelChoices,
   };
   browser = await chromium.launch({ headless: true });
@@ -104,6 +104,36 @@ let browser;
   const glm = frame.locator('#providers .provider').filter({ hasText: 'GLM' });
   await glm.getByRole('combobox').selectOption('api');
   await glm.getByRole('button', { name: '从环境变量导入' }).click();
+  assert.equal(await frame.locator('#configure').isVisible(), false);
+  assert.equal(await frame.locator('#key-link').isVisible(), true);
+  await page.evaluate(() => {
+    for (const p of Object.values(window.mockState.credentials)) p.configured = true;
+    window.mockState.v2_configured = false;
+  });
+  await frame.locator('#refresh').click();
+  await frame.locator('#configure').filter({ hasText: '启用原生子代理' }).waitFor();
+  await page.evaluate(() => { window.mockState.v2_configured = true; });
+  await frame.locator('#refresh').click();
+  await frame.locator('#v2-status').filter({ hasText: '原生配置已就绪' }).waitFor();
+  assert.equal(await frame.locator('#configure').isVisible(), false);
+  assert.equal(await frame.locator('#rewrite').isVisible(), false);
+  await frame.getByText('配置详情', {exact: true}).click();
+  await frame.locator('#cli-detail').filter({hasText: '0.1.4656'}).waitFor();
+  assert.equal(await frame.locator('#rewrite').isVisible(), true);
+  await frame.getByText('配置详情', {exact: true}).click();
+  await frame.locator('#notice').evaluate(el => { el.hidden = true; });
+  assert.equal(await frame.locator('#save-roles').isDisabled(), true);
+  await page.locator('#app').evaluate(iframe => { iframe.style.height = iframe.contentDocument.body.scrollHeight + 'px'; });
+  await frame.locator('body').screenshot({ path: path.join(__dirname, 'settings-ready.png') });
+  await page.locator('#app').evaluate(iframe => {
+    iframe.contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme: 'dark' } }, '*');
+  });
+  await frame.waitForSelector('html[data-theme="dark"]');
+  await frame.locator('body').screenshot({ path: path.join(__dirname, 'settings-ready-dark.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#app').evaluate(iframe => { iframe.style.height = iframe.contentDocument.body.scrollHeight + 'px'; });
+  await frame.locator('body').screenshot({ path: path.join(__dirname, 'settings-ready-mobile.png') });
+  await page.setViewportSize({ width: 1100, height: 960 });
   const researcher = frame.locator('.role[data-role="researcher"]');
   const modelSelect = researcher.locator('select[name="model"]');
   const selectedModel = alternatives.researcher[1];
@@ -122,7 +152,7 @@ let browser;
   await frame.locator('#notice').filter({ hasText: '分工预设已保存' }).waitFor();
   await frame.locator('#configure').click();
   await frame.locator('#notice').filter({ hasText: '配置完成' }).waitFor();
-  await frame.locator('#v2-status').filter({ hasText: '已写入配置' }).waitFor();
+  await frame.locator('#v2-status').filter({ hasText: '配置已更新，请重启 Codex' }).waitFor();
   assert.equal(await modelSelect.inputValue(), selectedModel);
   const calls = await page.evaluate(() => window.calls);
   const imports = calls.filter((call) => call.params?.name === 'import_credential').map((call) => call.params.arguments);

@@ -40,7 +40,7 @@ action. The Codex **Configure** button starts setup in a chat. You can also send
    Expand the role's settings to edit its display name, responsibility, and effort.
    Save the changes. The bundled skill
    reads `~/.codex/mygo/preferences.json` before dispatch.
-3. Write the V2 configuration for first-time setup. Sync the selected models when
+3. Check the native configuration status at the top of the panel. A ready configuration needs no action. Expand its details to see the CLI version or rewrite the configuration. Enable native subagents for first-time setup. Sync the selected models when
    you choose a model outside the current Codex catalog. MYGO uses an installed compatible Magpie or
    downloads the official CLI, verifies its published SHA-256 checksum, selects
    the configured models, and updates the Codex V2 settings. Existing Codex files

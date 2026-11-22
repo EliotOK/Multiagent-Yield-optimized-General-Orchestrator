@@ -167,19 +167,34 @@ def magpie_environment():
     return {}
 
 
+def managed_magpie_path():
+    override = os.environ.get("MYGO_MAGPIE_EXECUTABLE")
+    if override:
+        return Path(override)
+    local = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local")
+    return local / "MYGO/bin/magpie.exe"
+
+
 def find_magpie():
     candidates = [shutil.which("magpie")]
+    if os.name == "nt" or os.environ.get("MYGO_MAGPIE_EXECUTABLE"):
+        candidates.insert(0, managed_magpie_path())
     if os.name == "nt":
-        candidates.extend([
-            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/Magpie/magpie.exe",
-            Path.home() / ".local/bin/magpie.exe",
-        ])
+        local = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local")
+        # Desktop hosts can redirect LOCALAPPDATA while the CLI lives in the user profile.
+        profile_local = Path.home() / "AppData/Local"
+        candidates.extend([profile_local / "MYGO/bin/magpie.exe", local / "Programs/Magpie/magpie.exe",
+                           profile_local / "Programs/Magpie/magpie.exe", Path.home() / ".local/bin/magpie.exe"])
     else:
         candidates.extend([Path.home() / ".local/bin/magpie", Path("/usr/local/bin/magpie")])
-    for candidate in candidates:
-        if candidate and Path(candidate).is_file():
-            return str(candidate)
-    return None
+    existing = list(dict.fromkeys(Path(item) for item in candidates if item and Path(item).is_file()))
+    for executable in existing:
+        try:
+            if Magpie(str(executable), timeout=5).version() >= MINIMUM_MAGPIE:
+                return str(executable)
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            continue
+    return str(existing[0]) if existing else None
 
 
 def environment_key(name):
@@ -608,6 +623,15 @@ def status(home, magpie=None):
     models = catalog_models(catalog)
     providers = provider_state()
     roles = load_roles(home / "mygo" / "preferences.json")
+    try:
+        settings = tomllib.loads(config)
+    except tomllib.TOMLDecodeError:
+        settings = {}
+    configured_path = settings.get("model_catalog_json")
+    features = settings.get("features")
+    v2 = features.get("multi_agent_v2") if isinstance(features, dict) else None
+    uses_catalog = isinstance(configured_path, str) and (home / configured_path) == catalog
+    v2_enabled = v2 is True or (isinstance(v2, dict) and v2.get("enabled") is True)
     executable = magpie.executable if magpie else find_magpie()
     version = None
     if executable:
@@ -620,7 +644,7 @@ def status(home, magpie=None):
         "magpie_installed": bool(executable),
         "magpie_version": version,
         "magpie_compatible": bool(version and tuple(map(int, version.split("."))) >= MINIMUM_MAGPIE),
-        "v2_configured": "model_catalog_json" in config and "mygo-magpie-v2-models.json" in config,
+        "v2_configured": uses_catalog and v2_enabled,
         "code_mode": bool(re.search(r"(?m)^code_mode\s*=\s*true\s*$", config)),
         "model_catalog": catalog.exists(),
         "roles": roles,

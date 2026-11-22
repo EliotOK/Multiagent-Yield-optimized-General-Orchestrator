@@ -8,16 +8,35 @@
 </head>
 <body>
   <header class="page-header">
-    <h1>MYGO 设置</h1>
+    <h1><span class="wordmark">MYGO</span><span class="title-divider" aria-hidden="true"></span>设置</h1>
     <button id="refresh" class="quiet" type="button" disabled>刷新状态</button>
   </header>
   <div id="notice" class="notice" role="status" hidden></div>
   <main>
+    <section class="native" aria-labelledby="native-heading">
+      <div class="native-overview">
+        <span id="native-symbol" aria-hidden="true">·</span>
+        <div>
+          <h2 id="native-heading">原生子代理 · V2</h2>
+          <p id="v2-status" role="status">正在读取配置…</p>
+        </div>
+        <a id="key-link" href="#providers-heading" hidden>设置供应商密钥</a>
+        <button id="configure" class="primary" type="button" hidden disabled></button>
+      </div>
+      <details id="native-details">
+        <summary>配置详情</summary>
+        <div class="diagnostics">
+          <dl><dt>Magpie CLI</dt><dd id="cli-detail">检测中</dd>
+            <dt>模型目录</dt><dd id="catalog-detail">检测中</dd></dl>
+          <button id="rewrite" class="secondary" type="button" hidden disabled>重新写入配置</button>
+        </div>
+      </details>
+    </section>
     <section class="panel" aria-labelledby="roles-heading">
       <div class="section-heading">
         <div>
           <h2 id="roles-heading">模型与分工</h2>
-          <p class="hint">保存后，下次派发会读取新的分工。</p>
+          <p class="hint">选择下次派发使用的型号，展开每行可调整职责。</p>
         </div>
         <button id="save-roles" class="primary" type="button" disabled>保存分工</button>
       </div>
@@ -27,7 +46,7 @@
     </section>
     <section class="panel" aria-labelledby="providers-heading">
       <div class="section-heading">
-        <h2 id="providers-heading">模型接入</h2>
+        <h2 id="providers-heading">供应商密钥</h2>
         <span id="ready-count" class="status-pill">检测中</span>
       </div>
       <div id="providers" class="provider-list"></div>
@@ -44,17 +63,6 @@
         </div>
       </template>
       <p id="credential-help" class="hint panel-note" hidden>密钥在本机密码窗口输入。导入后点击右上角刷新状态。</p>
-    </section>
-    <section class="panel" aria-labelledby="native-heading">
-      <div class="section-heading">
-        <h2 id="native-heading">原生子代理</h2>
-        <span id="v2-status" class="status-pill">检测中</span>
-      </div>
-      <div id="setup-details" class="setup-details"></div>
-      <div class="panel-footer">
-        <p class="hint">写入原生 V2 配置后，重启 Codex 以加载模型目录。</p>
-        <button id="configure" class="secondary" type="button" disabled>写入原生 V2 配置</button>
-      </div>
     </section>
   </main>
   <script>/* SETTINGS_JS */</script>

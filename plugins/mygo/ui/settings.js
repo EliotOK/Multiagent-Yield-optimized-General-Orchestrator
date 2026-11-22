@@ -1,11 +1,4 @@
 const byId = (id) => document.getElementById(id);
-const rolePurposes = {
-  researcher: "资料检索",
-  builder: "代码构建",
-  reviewer: "方案与审核",
-  writer: "写作与视觉",
-  executor: "执行与验证",
-};
 const effortOptions = [
   ["low", "低"], ["medium", "中"], ["high", "高"], ["xhigh", "很高"], ["max", "最高"],
 ];
@@ -13,6 +6,7 @@ const pending = new Map();
 let requestId = 0;
 let state = null;
 let bridgeReady;
+let restartPending = false;
 
 function notify(method, params = {}) {
   window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
@@ -90,7 +84,7 @@ function renderProviders() {
   for (const [name, provider] of entries) {
     const row = element("div", "provider");
     row.appendChild(element("strong", "provider-name", provider.label));
-    const statusText = provider.configured ? "Magpie 已配置" : provider.environment ? "检测到本机环境变量" : "尚未检测到密钥";
+    const statusText = provider.configured ? "密钥已配置" : provider.environment ? "检测到本机环境变量" : "尚未检测到密钥";
     row.appendChild(element("span", `provider-state${provider.configured ? " ready" : ""}`, statusText));
     if (!provider.configured) {
       if (name === "glm") {
@@ -119,16 +113,31 @@ function hasPendingModels(preferences) {
 }
 
 function renderNativeStatus() {
-  const needsSync = hasPendingModels(rolePreferences());
+  const preferences = rolePreferences();
+  const needsSync = hasPendingModels(preferences);
+  const selectedProviders = new Set(Object.values(preferences.roles).map(role => role.model.split("/")[0]));
+  const missingKeys = Object.values(state.credentials).filter(item =>
+    !item.configured && selectedProviders.has(item.provider_id));
   const status = byId("v2-status");
-  status.textContent = needsSync ? "有模型待同步" : state.v2_configured ? "已写入配置" : "未配置";
-  status.classList.toggle("ready", state.v2_configured && !needsSync);
-  status.classList.toggle("pending", needsSync);
-  byId("configure").textContent = needsSync ? "同步所选模型" : "写入原生 V2 配置";
-  const details = byId("setup-details");
-  details.replaceChildren();
-  const cliStatus = state.magpie_compatible ? `Magpie ${state.magpie_version}` : "写入配置时会下载并校验兼容的 Magpie CLI。";
-  details.appendChild(element("p", "", cliStatus));
+  const configured = state.v2_configured;
+  const ready = configured && !needsSync && !missingKeys.length;
+  status.textContent = missingKeys.length ? `待接入 ${missingKeys.map(item => item.label).join("、")}`
+    : !configured ? "尚未启用原生子代理" : needsSync ? "所选模型待同步"
+    : restartPending ? "配置已更新，请重启 Codex" : "原生配置已就绪";
+  const symbol = byId("native-symbol");
+  symbol.textContent = ready ? "✓" : "·";
+  symbol.classList.toggle("ready", ready);
+  byId("native-details").classList.toggle("compact", ready);
+  const action = byId("configure");
+  byId("key-link").hidden = !missingKeys.length;
+  action.hidden = ready || missingKeys.length > 0;
+  action.textContent = needsSync ? "同步所选模型" : "启用原生子代理";
+  byId("rewrite").hidden = !ready;
+  const cli = state.magpie_version ? `版本 ${state.magpie_version}` : state.magpie_installed ? "版本未识别" : "未检测到";
+  byId("cli-detail").textContent = state.magpie_compatible ? cli : `${cli}。下次写入配置时将准备兼容版本。`;
+  byId("catalog-detail").textContent = !state.model_catalog ? "未找到本地目录"
+    : needsSync ? "待写入所选型号" : configured ? "已关联本地目录" : "已有本地目录，尚未启用";
+
 }
 
 async function importCredential(provider, source, button) {
@@ -156,7 +165,7 @@ function renderRoles(preferences) {
     card.dataset.role = key;
     const title = element("div", "role-title");
     title.appendChild(element("h3", "", group.provider));
-    title.appendChild(element("span", "role-purpose", rolePurposes[key]));
+    title.appendChild(element("span", "role-purpose", role.responsibility));
     card.appendChild(title);
 
     const choices = [...new Set([role.model, ...group.options])].map((id) => {
@@ -233,16 +242,28 @@ function rolePreferences() {
   return { version: 1, roles };
 }
 
+function rolesEdited(draft) {
+  return Object.entries(draft.roles).some(([key, role]) =>
+    Object.entries(role).some(([field, value]) => value !== state.roles.roles[key][field]));
+}
+
+byId("roles").addEventListener("input", () => {
+  if (state && !byId("refresh").disabled) byId("save-roles").disabled = !rolesEdited(rolePreferences());
+});
+
 async function saveRoles() {
   const result = await callTool("save_roles", { preferences: rolePreferences() });
   state.roles = result.preferences;
+  for (const card of byId("roles").querySelectorAll(".role")) {
+    card.querySelector(".role-purpose").textContent = state.roles.roles[card.dataset.role].responsibility;
+  }
   return result;
 }
 
 async function refresh() {
   const updated = await callTool("read_settings");
   const draft = state ? rolePreferences() : null;
-  const edited = draft && JSON.stringify(draft) !== JSON.stringify(state.roles);
+  const edited = draft && rolesEdited(draft);
   state = updated;
   renderRoles(edited ? draft : state.roles);
   renderProviders();
@@ -254,14 +275,15 @@ async function runSettingsAction(action) {
   const refreshButton = byId("refresh");
   const saveButton = byId("save-roles");
   const configureButton = byId("configure");
-  refreshButton.disabled = saveButton.disabled = configureButton.disabled = true;
+  refreshButton.disabled = saveButton.disabled = configureButton.disabled = byId("rewrite").disabled = true;
   try {
     await action();
   } catch (error) {
     report(error.message, true);
   } finally {
     refreshButton.disabled = false;
-    saveButton.disabled = configureButton.disabled = !state;
+    configureButton.disabled = byId("rewrite").disabled = !state;
+    saveButton.disabled = !state || !rolesEdited(rolePreferences());
   }
 }
 
@@ -273,17 +295,22 @@ byId("save-roles").addEventListener("click", () => runSettingsAction(async () =>
   await saveRoles();
   report(hasPendingModels(state.roles) ? "分工预设已保存。请在原生子代理区同步所选型号。" : "分工预设已保存。");
 }));
-byId("configure").addEventListener("click", () => runSettingsAction(async () => {
-  report("正在检查模型目录并写入原生 V2 配置，可能需要下载兼容 CLI。");
-  await saveRoles();
-  const result = await callTool("configure_native");
-  const backup = result.backup ? `\n备份目录 ${result.backup}` : "";
-  report(`配置完成。请重启 Codex 以加载模型目录。${backup}`);
-  await refresh();
-}));
+function writeNative() {
+  return runSettingsAction(async () => {
+    report("正在写入模型目录和原生子代理配置…");
+    if (rolesEdited(rolePreferences())) await saveRoles();
+    const result = await callTool("configure_native");
+    restartPending = result.restart_required === true;
+    const backup = result.backup ? `\n备份目录 ${result.backup}` : "";
+    report(`配置完成。请重启 Codex 以加载模型目录。${backup}`);
+    await refresh();
+  });
+}
+byId("configure").addEventListener("click", writeNative);
+byId("rewrite").addEventListener("click", writeNative);
 
 bridgeReady = rpc("ui/initialize", {
-  appInfo: { name: "mygo-settings", version: "0.3.0" },
+  appInfo: { name: "mygo-settings", version: "0.3.1" },
   appCapabilities: {},
   protocolVersion: "2026-01-26",
 }).then((result) => {
