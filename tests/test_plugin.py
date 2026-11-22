@@ -1,3 +1,4 @@
+from base64 import b64encode
 import contextlib
 import copy
 import io
@@ -85,8 +86,11 @@ class IsolatedCase(unittest.TestCase):
 
 class UpdateTests(IsolatedCase):
     def test_checks_published_version_without_running_upgrade(self):
-        manifest = io.BytesIO(json.dumps({"name": "mygo", "version": "0.10.0"}).encode())
-        with mock.patch.object(mygo_server, "urlopen", return_value=manifest) as fetch, \
+        manifest = json.dumps({"name": "mygo", "version": "0.10.0"}).encode()
+        response = io.BytesIO(json.dumps({
+            "encoding": "base64", "content": b64encode(manifest).decode(),
+        }).encode())
+        with mock.patch.object(mygo_server, "urlopen", return_value=response) as fetch, \
                 mock.patch.object(mygo_server, "VERSION", "0.9.0"):
             self.assertEqual(mygo_server.check_update(), {
                 "current": "0.9.0", "latest": "0.10.0", "update_available": True,

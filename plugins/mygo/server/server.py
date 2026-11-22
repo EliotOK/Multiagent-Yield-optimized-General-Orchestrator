@@ -1,5 +1,6 @@
 """MYGO settings MCP App. The tool schema never accepts an API key."""
 
+from base64 import b64decode
 import json
 import os
 from pathlib import Path
@@ -7,7 +8,6 @@ import re
 import subprocess
 import sys
 import threading
-from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from mygo_setup import (
@@ -19,7 +19,7 @@ from mygo_setup import (
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
 URI = f"ui://mygo/settings-{VERSION}.html"
-UPDATE_MANIFEST = "https://raw.githubusercontent.com/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/main/plugins/mygo/plugin.json"
+UPDATE_MANIFEST = "https://api.github.com/repos/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/contents/plugins/mygo/plugin.json?ref=main"
 LEGACY_URI = "ui://mygo/settings.html"
 MIME = "text/html;profile=mcp-app"
 
@@ -110,8 +110,12 @@ def check_update():
     request = Request(UPDATE_MANIFEST, headers={"User-Agent": "MYGO-Setup", "Cache-Control": "no-cache"})
     try:
         with urlopen(request, timeout=12) as response:
-            latest = release_version(json.loads(response.read(65536)))
-    except (URLError, OSError, ValueError) as error:
+            entry = json.loads(response.read(65536))
+            if entry["encoding"] != "base64":
+                raise ValueError("Unrecognized GitHub file encoding")
+            content = b64decode("".join(entry["content"].split()), validate=True)
+            latest = release_version(json.loads(content))
+    except (OSError, ValueError, KeyError, AttributeError, TypeError) as error:
         raise RuntimeError("暂时无法检查 MYGO 更新。请稍后再试。") from error
     return {
         "current": VERSION,
