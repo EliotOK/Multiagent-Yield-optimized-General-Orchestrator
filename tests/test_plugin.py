@@ -110,6 +110,18 @@ class ManifestAndProtocolTests(IsolatedCase):
         self.assertIn({"type": "global"}, panel["_meta"]["openai/ui"]["entrypoints"])
         resource = instance.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": mygo_server.URI}})
         html = resource["result"]["contents"][0]["text"]
+        version = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))["version"]
+        uri = f"ui://mygo/settings-{version}.html"
+        self.assertEqual(panel["_meta"]["ui"]["resourceUri"], uri)
+        resources = instance.handle({"jsonrpc": "2.0", "id": 4, "method": "resources/list"})
+        self.assertEqual(resources["result"]["resources"][0]["uri"], uri)
+        opened = instance.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "show_settings"}})
+        self.assertEqual(opened["result"]["_meta"]["ui"]["resourceUri"], uri)
+        self.assertIn(f'id="plugin-version">{version}<', html)
+        legacy = "ui://mygo/settings.html"
+        old = instance.handle({"jsonrpc": "2.0", "id": 6, "method": "resources/read", "params": {"uri": legacy}})
+        self.assertEqual(old["result"]["contents"][0]["uri"], legacy)
+        self.assertEqual(old["result"]["contents"][0]["text"], html)
         self.assertIn("ui/initialize", html)
         self.assertIn("import_credential", html)
         self.assertNotIn("/* SETTINGS_JS */", html)

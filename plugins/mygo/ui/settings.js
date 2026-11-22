@@ -310,7 +310,7 @@ byId("configure").addEventListener("click", writeNative);
 byId("rewrite").addEventListener("click", writeNative);
 
 bridgeReady = rpc("ui/initialize", {
-  appInfo: { name: "mygo-settings", version: "0.3.1" },
+  appInfo: { name: "mygo-settings", version: byId("plugin-version").textContent },
   appCapabilities: {},
   protocolVersion: "2026-01-26",
 }).then((result) => {

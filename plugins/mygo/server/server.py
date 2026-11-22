@@ -14,7 +14,9 @@ from mygo_setup import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-URI = "ui://mygo/settings.html"
+VERSION = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
+URI = f"ui://mygo/settings-{VERSION}.html"
+LEGACY_URI = "ui://mygo/settings.html"
 MIME = "text/html;profile=mcp-app"
 
 
@@ -135,7 +137,7 @@ class Server:
 
     def call(self, name, args):
         if name == "show_settings":
-            return {"opened": True}
+            return {"opened": True, "version": VERSION}
         if name == "read_settings":
             return self.read()
         if name == "settings.read":
@@ -182,7 +184,7 @@ class Server:
                 result = {
                     "protocolVersion": version if version in ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25") else "2025-06-18",
                     "capabilities": {"tools": {}, "resources": {}, "experimental": {"openai/settings": {"readTool": "settings.read", "updateTool": "settings.update"}}},
-                    "serverInfo": {"name": "mygo", "version": "0.3.1"},
+                    "serverInfo": {"name": "mygo", "version": VERSION},
                     "instructions": "Use show_settings for local setup. Never request, accept, or return API keys. Provider import tools accept only a provider name and source. Role preferences contain no credentials.",
                 }
             elif method == "ping":
@@ -201,16 +203,18 @@ class Server:
                 text = "MYGO settings are ready." if name in {"show_settings", "read_settings", "settings.read"} else "MYGO settings were updated."
                 result = {"structuredContent": data, "content": [{"type": "text", "text": text}]}
                 if name == "show_settings":
+                    result["content"][0]["text"] = f"MYGO {VERSION} settings are ready."
                     result["_meta"] = {"ui": {"resourceUri": URI}}
             elif method == "resources/list":
                 result = {"resources": [{"uri": URI, "mimeType": MIME, "name": "mygo-settings"}]}
             elif method == "resources/templates/list":
                 result = {"resourceTemplates": []}
-            elif method == "resources/read" and params.get("uri") == URI:
+            elif method == "resources/read" and params.get("uri") in (URI, LEGACY_URI):
                 html = (ROOT / "ui/settings.html").read_text(encoding="utf-8")
                 html = html.replace("/* SETTINGS_CSS */", (ROOT / "ui/settings.css").read_text(encoding="utf-8"))
                 html = html.replace("/* SETTINGS_JS */", (ROOT / "ui/settings.js").read_text(encoding="utf-8"))
-                result = {"contents": [{"uri": URI, "mimeType": MIME, "text": html, "_meta": {"ui": {"prefersBorder": True, "csp": {"connectDomains": [], "resourceDomains": []}}, "openai/ui": {"availableDisplayModes": ["inline", "fullscreen"], "preferredDisplayMode": "fullscreen"}}}]}
+                html = html.replace("__MYGO_VERSION__", VERSION)
+                result = {"contents": [{"uri": params["uri"], "mimeType": MIME, "text": html, "_meta": {"ui": {"prefersBorder": True, "csp": {"connectDomains": [], "resourceDomains": []}}, "openai/ui": {"availableDisplayModes": ["inline", "fullscreen"], "preferredDisplayMode": "fullscreen"}}}]}
             else:
                 return {"jsonrpc": "2.0", "id": ident, "error": {"code": -32601, "message": "Unknown method"}}
             return {"jsonrpc": "2.0", "id": ident, "result": result}

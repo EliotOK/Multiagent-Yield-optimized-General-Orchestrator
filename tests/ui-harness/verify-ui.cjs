@@ -9,6 +9,7 @@ let browser;
   const plugin = path.join(root, 'plugins/mygo');
   const roles = JSON.parse(fs.readFileSync(path.join(plugin, 'assets/default-roles.json'), 'utf8'));
   const html = fs.readFileSync(path.join(plugin, 'ui/settings.html'), 'utf8')
+    .replace('__MYGO_VERSION__', JSON.parse(fs.readFileSync(path.join(plugin, 'plugin.json'), 'utf8')).version)
     .replace('/* SETTINGS_CSS */', fs.readFileSync(path.join(plugin, 'ui/settings.css'), 'utf8'))
     .replace('/* SETTINGS_JS */', fs.readFileSync(path.join(plugin, 'ui/settings.js'), 'utf8'));
   const providers = {
