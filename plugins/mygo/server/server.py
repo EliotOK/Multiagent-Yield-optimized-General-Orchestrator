@@ -23,7 +23,8 @@ CACHE_PATH = Path("plugins/cache/mygo/mygo")
 PLUGIN_ID = "mygo@mygo"
 URI = f"ui://mygo/settings-{VERSION}.html"
 UPDATE_MANIFEST = "https://api.github.com/repos/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/contents/plugins/mygo/plugin.json?ref=main"
-LEGACY_URI = "ui://mygo/settings.html"
+# Desktop may reopen a panel using the resource URI saved before an upgrade.
+SETTINGS_URI_PATTERN = re.compile(r"ui://mygo/settings(?:-[0-9]{1,8}\.[0-9]{1,8}\.[0-9]{1,8})?\.html")
 MIME = "text/html;profile=mcp-app"
 
 
@@ -416,12 +417,15 @@ class Server:
                 result = {"resources": [{"uri": URI, "mimeType": MIME, "name": "mygo-settings"}]}
             elif method == "resources/templates/list":
                 result = {"resourceTemplates": []}
-            elif method == "resources/read" and params.get("uri") in (URI, LEGACY_URI):
+            elif method == "resources/read":
+                uri = params.get("uri")
+                if not isinstance(uri, str) or (uri != URI and not SETTINGS_URI_PATTERN.fullmatch(uri)):
+                    return {"jsonrpc": "2.0", "id": ident, "error": {"code": -32002, "message": "Resource not found"}}
                 html = (ROOT / "ui/settings.html").read_text(encoding="utf-8")
                 html = html.replace("/* SETTINGS_CSS */", (ROOT / "ui/settings.css").read_text(encoding="utf-8"))
                 html = html.replace("/* SETTINGS_JS */", (ROOT / "ui/settings.js").read_text(encoding="utf-8"))
                 html = html.replace("__MYGO_VERSION__", VERSION)
-                result = {"contents": [{"uri": params["uri"], "mimeType": MIME, "text": html, "_meta": {"ui": {"prefersBorder": True, "csp": {"connectDomains": [], "resourceDomains": []}}, "openai/ui": {"availableDisplayModes": ["inline", "fullscreen"], "preferredDisplayMode": "fullscreen"}}}]}
+                result = {"contents": [{"uri": uri, "mimeType": MIME, "text": html, "_meta": {"ui": {"prefersBorder": True, "csp": {"connectDomains": [], "resourceDomains": []}}, "openai/ui": {"availableDisplayModes": ["inline", "fullscreen"], "preferredDisplayMode": "fullscreen"}}}]}
             else:
                 return {"jsonrpc": "2.0", "id": ident, "error": {"code": -32601, "message": "Unknown method"}}
             return {"jsonrpc": "2.0", "id": ident, "result": result}

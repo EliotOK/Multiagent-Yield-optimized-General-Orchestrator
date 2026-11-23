@@ -194,10 +194,19 @@ class ManifestAndProtocolTests(IsolatedCase):
         opened = instance.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "show_settings"}})
         self.assertEqual(opened["result"]["_meta"]["ui"]["resourceUri"], uri)
         self.assertIn(f'id="plugin-version">{version}<', html)
-        legacy = "ui://mygo/settings.html"
-        old = instance.handle({"jsonrpc": "2.0", "id": 6, "method": "resources/read", "params": {"uri": legacy}})
-        self.assertEqual(old["result"]["contents"][0]["uri"], legacy)
-        self.assertEqual(old["result"]["contents"][0]["text"], html)
+        for saved_uri in ("ui://mygo/settings.html", "ui://mygo/settings-0.3.8.html", "ui://mygo/settings-0.3.9.html"):
+            with self.subTest(uri=saved_uri):
+                response = instance.handle({
+                    "jsonrpc": "2.0", "id": 6, "method": "resources/read", "params": {"uri": saved_uri},
+                })
+                panel = response["result"]["contents"][0]
+                self.assertEqual(panel["uri"], saved_uri)
+                self.assertEqual(panel["text"], html)
+                self.assertEqual(panel["mimeType"], mygo_server.MIME)
+        unknown = instance.handle({
+            "jsonrpc": "2.0", "id": 7, "method": "resources/read", "params": {"uri": "ui://mygo/other.html"},
+        })
+        self.assertEqual(unknown["error"]["code"], -32002)
         self.assertIn("ui/initialize", html)
         self.assertIn("import_credential", html)
         self.assertNotIn("/* SETTINGS_JS */", html)
