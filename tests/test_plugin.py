@@ -86,39 +86,77 @@ class IsolatedCase(unittest.TestCase):
 
 
 class UpdateTests(IsolatedCase):
-    def test_checks_published_version_without_running_upgrade(self):
+    def test_reads_the_published_version(self):
         manifest = json.dumps({"name": "mygo", "version": "0.10.0"}).encode()
         response = io.BytesIO(json.dumps({
             "encoding": "base64", "content": b64encode(manifest).decode(),
         }).encode())
-        with mock.patch.object(mygo_server, "urlopen", return_value=response) as fetch, \
-                mock.patch.object(mygo_server, "VERSION", "0.9.0"):
-            self.assertEqual(mygo_server.check_update(), {
-                "current": "0.9.0", "latest": "0.10.0", "update_available": True,
-            })
+        with mock.patch.object(mygo_server, "urlopen", return_value=response) as fetch:
+            self.assertEqual(mygo_server.published_version(), "0.10.0")
         self.assertEqual(fetch.call_args.args[0].full_url, mygo_server.UPDATE_MANIFEST)
 
-    def test_update_uses_named_marketplace_and_verifies_installed_version(self):
-        version = "0.10.0"
-        marketplace = self.base / "marketplace"
-        for manifest in [marketplace / "plugins/mygo/plugin.json",
-                         self.home / "plugins/cache/mygo/mygo" / version / "plugin.json"]:
-            manifest.parent.mkdir(parents=True)
-            manifest.write_text(json.dumps({"name": "mygo", "version": version}), encoding="utf-8")
-        release = {"current": "0.9.0", "latest": version, "update_available": True}
-        process = subprocess.CompletedProcess([], 0, json.dumps({
-            "upgradedRoots": [str(marketplace)], "errors": [],
-        }), "")
-        instance = mygo_server.Server(self.home)
-        with mock.patch.object(mygo_server, "check_update", return_value=release), \
+    def test_cached_plugin_uses_its_own_codex_profile(self):
+        root = self.home / mygo_server.CACHE_PATH / "0.9.0"
+        other_profile = self.base / "other-profile"
+        with mock.patch.dict(os.environ, {"CODEX_HOME": str(other_profile)}):
+            self.assertEqual(mygo_server.profile_home(root), self.home)
+            self.assertEqual(mygo_server.profile_home(PLUGIN), other_profile)
+
+    def inventory(self, version):
+        return subprocess.CompletedProcess([], 0, json.dumps({"installed": [
+            {"pluginId": "mygo@mygo", "version": version},
+        ]}), "")
+
+    def test_old_panel_reports_installed_update_without_fetching_again(self):
+        with mock.patch.object(mygo_server, "VERSION", "0.9.0"), \
+                mock.patch.object(mygo_server, "published_version", return_value="0.10.0"), \
                 mock.patch.object(mygo_server, "find_codex", return_value="codex"), \
-                mock.patch.object(mygo_server.subprocess, "run", return_value=process) as run:
-            self.assertEqual(instance.update_plugin()["installed"], version)
-            self.assertEqual(run.call_args.args[0], ["codex", "plugin", "marketplace", "upgrade", "mygo", "--json"])
-            self.assertEqual(run.call_args.kwargs["env"]["CODEX_HOME"], str(self.home))
-            manifest.unlink()
-            with self.assertRaisesRegex(RuntimeError, "未能确认更新完成"):
-                instance.update_plugin()
+                mock.patch.object(mygo_server, "run_codex", return_value=self.inventory("0.10.0")) as native:
+            result = mygo_server.Server(self.home).update_plugin()
+        self.assertEqual(result, {
+            "current": "0.9.0", "installed": "0.10.0", "latest": "0.10.0",
+            "reload_required": True, "update_available": False,
+        })
+        native.assert_called_once()
+        self.assertEqual(native.call_args.args[1], ["plugin", "list", "--marketplace", "mygo", "--json"])
+
+    def test_verifies_new_install_even_with_no_upgraded_roots(self):
+        command_result = subprocess.CompletedProcess([], 0, '{"upgradedRoots":[],"errors":[]}', "")
+        results = [self.inventory("0.9.0"), command_result, self.inventory("0.10.0")]
+        with mock.patch.object(mygo_server, "VERSION", "0.9.0"), \
+                mock.patch.object(mygo_server, "published_version", return_value="0.10.0"), \
+                mock.patch.object(mygo_server, "find_codex", return_value="codex"), \
+                mock.patch.object(mygo_server, "run_codex", side_effect=results) as native:
+            result = mygo_server.Server(self.home).update_plugin()
+        self.assertEqual(result["installed"], "0.10.0")
+        self.assertTrue(result["reload_required"])
+        self.assertEqual(native.call_args_list[1].args[1], ["plugin", "marketplace", "upgrade", "mygo", "--json"])
+        self.assertTrue(all(call.args[2]["CODEX_HOME"] == str(self.home) for call in native.call_args_list))
+
+    def test_current_market_repairs_an_older_installed_package(self):
+        manifest = self.home / ".tmp/marketplaces/mygo/plugins/mygo/plugin.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text('{"name":"mygo","version":"0.10.0"}', encoding="utf-8")
+        done = subprocess.CompletedProcess([], 0, "{}", "")
+        results = [self.inventory("0.9.0"), done, self.inventory("0.9.0"), done, self.inventory("0.10.0")]
+        with mock.patch.object(mygo_server, "VERSION", "0.9.0"), \
+                mock.patch.object(mygo_server, "published_version", return_value="0.10.0"), \
+                mock.patch.object(mygo_server, "find_codex", return_value="codex"), \
+                mock.patch.object(mygo_server, "run_codex", side_effect=results) as native:
+            result = mygo_server.Server(self.home).update_plugin()
+        self.assertEqual(result["installed"], "0.10.0")
+        self.assertEqual(native.call_args_list[3].args[1], ["plugin", "add", "mygo@mygo", "--json"])
+
+    def test_update_failure_identifies_missing_git_without_showing_raw_output(self):
+        failure = subprocess.CompletedProcess([], 1, "", "failed to run git: program not found; private details")
+        results = [self.inventory("0.9.0"), failure, self.inventory("0.9.0")]
+        with mock.patch.object(mygo_server, "VERSION", "0.9.0"), \
+                mock.patch.object(mygo_server, "published_version", return_value="0.10.0"), \
+                mock.patch.object(mygo_server, "find_codex", return_value="codex"), \
+                mock.patch.object(mygo_server, "run_codex", side_effect=results):
+            with self.assertRaisesRegex(RuntimeError, "无法启动 Git") as caught:
+                mygo_server.Server(self.home).update_plugin()
+        self.assertNotIn("private details", str(caught.exception))
 
 
 class ManifestAndProtocolTests(IsolatedCase):

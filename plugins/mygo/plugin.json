@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mygo",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Configure multi-model Codex subagents and assign their responsibilities.",
   "author": {
     "name": "EliotOK",

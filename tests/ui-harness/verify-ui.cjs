@@ -48,6 +48,7 @@ let browser;
   await page.setContent(`<body style="margin:0"><iframe id="app" style="width:100%;height:900px;border:0"></iframe><script>
     window.calls = [];
     window.availableUpdate = false;
+    window.installedVersion = '${version}';
     window.mockState = ${JSON.stringify(state)};
     window.addEventListener('message', (event) => {
       const m = event.data;
@@ -55,10 +56,15 @@ let browser;
       window.calls.push(m);
       let result = {};
       if (m.method === 'ui/initialize') result = { hostContext: { theme: 'dark' } };
-      if (m.params?.name === 'check_update') {
-        result = { structuredContent: { current: '${version}', latest: window.availableUpdate ? '${nextVersion}' : '${version}', update_available: window.availableUpdate } };
+      if (m.params?.name === 'update_plugin') window.installedVersion = '${nextVersion}';
+      if (m.params?.name === 'check_update' || m.params?.name === 'update_plugin') {
+        const needsReload = window.installedVersion !== '${version}';
+        result = { structuredContent: {
+          current: '${version}', installed: window.installedVersion,
+          latest: window.availableUpdate ? '${nextVersion}' : '${version}',
+          reload_required: needsReload, update_available: window.availableUpdate && !needsReload,
+        } };
       }
-      if (m.params?.name === 'update_plugin') result = { structuredContent: { installed: '${nextVersion}' } };
       if (m.method === 'tools/call' && m.params.name === 'read_settings') result = { structuredContent: window.mockState };
       if (m.params?.name === 'refresh_provider_models' && m.params.arguments.provider_id === 'zhipu') {
         const model = 'zhipu/glm-5.4';
@@ -94,6 +100,11 @@ let browser;
   assert.equal(await page.evaluate(() => window.calls.some(call => call.params?.name === 'update_plugin')), false);
   await frame.getByRole('button', {name: '更新 MYGO'}).click();
   await frame.locator('#update-status').filter({hasText: `已安装 MYGO ${nextVersion}`}).waitFor();
+  await frame.getByRole('button', {name: '检查更新'}).click();
+  await frame.locator('#update-status').filter({hasText: '当前面板仍在运行'}).waitFor();
+  assert.equal(await frame.locator('#apply-update').isVisible(), false);
+  assert.equal(await page.evaluate(() => window.calls.filter(call => call.params?.name === 'update_plugin').length), 1);
+  assert.equal(await frame.locator('#plugin-version').textContent(), version);
   await frame.locator('#update').evaluate(el => { el.hidden = true; });
 
   assert.equal(await frame.locator('#roles select[name="model"]').count(), 1);

@@ -8,7 +8,10 @@
 </head>
 <body>
   <header class="page-header">
-    <h1><span class="wordmark">MYGO</span><span class="title-divider" aria-hidden="true"></span>设置</h1>
+    <h1>
+      <span class="wordmark">MYGO</span><span class="title-divider" aria-hidden="true"></span>设置
+      <span class="plugin-version" title="当前面板运行版本">v<span id="plugin-version">__MYGO_VERSION__</span></span>
+    </h1>
     <div class="header-actions">
       <button id="check-update" class="quiet" type="button" disabled>检查更新</button>
       <button id="refresh" class="quiet" type="button" disabled>刷新状态</button>
@@ -32,8 +35,7 @@
       <details id="native-details">
         <summary>配置详情</summary>
         <div class="diagnostics">
-          <dl><dt>MYGO 插件</dt><dd id="plugin-version">__MYGO_VERSION__</dd>
-            <dt>Magpie CLI</dt><dd id="cli-detail">检测中</dd>
+          <dl><dt>Magpie CLI</dt><dd id="cli-detail">检测中</dd>
             <dt>模型目录</dt><dd id="catalog-detail">检测中</dd></dl>
           <button id="rewrite" class="secondary" type="button" hidden disabled>重新写入配置</button>
         </div>

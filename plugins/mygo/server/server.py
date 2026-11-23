@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -18,6 +19,8 @@ from mygo_setup import (
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
+CACHE_PATH = Path("plugins/cache/mygo/mygo")
+PLUGIN_ID = "mygo@mygo"
 URI = f"ui://mygo/settings-{VERSION}.html"
 UPDATE_MANIFEST = "https://api.github.com/repos/EliotOK/Multiagent-Yield-optimized-General-Orchestrator/contents/plugins/mygo/plugin.json?ref=main"
 LEGACY_URI = "ui://mygo/settings.html"
@@ -109,7 +112,7 @@ def release_version(manifest):
     raise ValueError("无法识别 MYGO 的版本信息。")
 
 
-def check_update():
+def published_version():
     request = Request(UPDATE_MANIFEST, headers={"User-Agent": "MYGO-Setup", "Cache-Control": "no-cache"})
     try:
         with urlopen(request, timeout=12) as response:
@@ -117,15 +120,79 @@ def check_update():
             if entry["encoding"] != "base64":
                 raise ValueError("Unrecognized GitHub file encoding")
             content = b64decode("".join(entry["content"].split()), validate=True)
-            latest = release_version(json.loads(content))
+            return release_version(json.loads(content))
     except (OSError, ValueError, KeyError, AttributeError, TypeError) as error:
         raise RuntimeError("暂时无法检查 MYGO 更新。请稍后再试。") from error
+
+
+def profile_home(root):
+    # Installed plugin paths identify the profile that owns the MCP process.
+    if root.parent.parts[-len(CACHE_PATH.parts):] == CACHE_PATH.parts:
+        return root.parents[len(CACHE_PATH.parts)]
+    return Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+
+
+def version_key(version):
+    return tuple(map(int, version.split(".")))
+
+
+def update_environment(home):
+    environment = dict(os.environ, CODEX_HOME=str(home), GIT_TERMINAL_PROMPT="0")
+    if os.name == "nt" and not shutil.which("git.exe", path=environment.get("PATH", "")):
+        profile = Path.home()
+        directories = [
+            Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Git/cmd",
+            profile / "AppData/Local/Programs/Git/cmd",
+            profile / ".cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd",
+        ]
+        for directory in directories:
+            if (directory / "git.exe").is_file():
+                environment["PATH"] = str(directory) + os.pathsep + environment.get("PATH", "")
+                break
+    return environment
+
+
+def run_codex(executable, arguments, environment, timeout):
+    return subprocess.run([executable, *arguments], env=environment, stdin=subprocess.DEVNULL,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def installed_version(executable, environment):
+    if not executable:
+        return VERSION
+    try:
+        result = run_codex(executable, ["plugin", "list", "--marketplace", "mygo", "--json"], environment, 8)
+        result.check_returncode()
+        entries = json.loads(result.stdout)["installed"]
+        for item in entries:
+            if item.get("pluginId") == PLUGIN_ID:
+                return release_version({"name": "mygo", "version": item["version"]})
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError):
+        pass
+    return VERSION
+
+
+def update_result(latest, installed):
     return {
-        "current": VERSION,
-        "latest": latest,
-        "update_available": tuple(map(int, latest.split("."))) > tuple(map(int, VERSION.split("."))),
+        "current": VERSION, "installed": installed, "latest": latest,
+        "reload_required": version_key(installed) > version_key(VERSION),
+        "update_available": bool(latest and version_key(latest) > version_key(installed)),
     }
 
+
+def update_error(result):
+    # Match known failures without presenting potentially sensitive CLI output.
+    details = (result.stderr + result.stdout).casefold()
+    if "git" in details and any(marker in details for marker in ("program not found", "could not find git", "git not found")):
+        return "Codex 无法启动 Git。安装 Git 后，退出并重新打开 Codex，再试一次。"
+    if any(marker in details for marker in ("access is denied", "permission denied", "access denied", "拒绝访问", "os error 5")):
+        return "Codex 无权写入插件目录。请在 Codex 的插件目录里刷新 MYGO 市场源后重试。"
+    if any(marker in details for marker in ("could not resolve host", "failed to connect", "failed to fetch", "connection reset")):
+        return "Codex 无法连接 GitHub。请检查网络后重试。"
+    if "marketplace" in details and any(marker in details for marker in ("not configured", "unknown marketplace", "unrecognized subcommand")):
+        return "当前 Codex 配置无法升级 MYGO 市场源。请核对插件目录中的 MYGO 来源。"
+    return f"Codex 的插件更新命令失败（退出码 {result.returncode}）。请在插件目录中刷新 MYGO 市场源后重试。"
 
 class Server:
     def __init__(self, home):
@@ -214,40 +281,59 @@ class Server:
             after = set(updated["models"])
             return {"model_count": len(after), "added": len(after - before), "removed": len(before - after)}
 
+    def check_update(self):
+        environment = update_environment(self.home)
+        installed = installed_version(find_codex(), environment)
+        try:
+            latest = published_version()
+        except RuntimeError:
+            if version_key(installed) > version_key(VERSION):
+                return update_result(None, installed)
+            raise
+        return update_result(latest, installed)
+
     def update_plugin(self):
         with self.setup_lock:
             self.check_credential_window()
-            release = check_update()
+            release = self.check_update()
             if not release["update_available"]:
                 return release
             executable = find_codex()
             if not executable:
                 raise RuntimeError("未找到 Codex CLI。请更新 Codex 后重试。")
-            environment = dict(os.environ, CODEX_HOME=str(self.home), GIT_TERMINAL_PROMPT="0")
-            command = [executable, "plugin", "marketplace", "upgrade", "mygo", "--json"]
+            environment = update_environment(self.home)
+            latest = release["latest"]
             try:
-                result = subprocess.run(command, env=environment, capture_output=True,
-                                        text=True, encoding="utf-8", errors="replace", timeout=110)
-                report = json.loads(result.stdout)
-                if result.returncode or report["errors"] or not report["upgradedRoots"]:
-                    raise ValueError("Marketplace upgrade failed")
-                installed = release_version(json.loads(
-                    (Path(report["upgradedRoots"][0]) / "plugins/mygo/plugin.json").read_text(encoding="utf-8")
-                ))
-                cached = self.home / "plugins/cache/mygo/mygo" / installed / "plugin.json"
-                if release_version(json.loads(cached.read_text(encoding="utf-8"))) != installed:
-                    raise ValueError("Plugin cache version differs from marketplace")
-            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-                raise RuntimeError("未能确认更新完成。请在终端运行 codex plugin marketplace upgrade mygo 查看详情。") from error
-            if tuple(map(int, installed.split("."))) < tuple(map(int, release["latest"].split("."))):
-                raise RuntimeError("当前 MYGO 市场源还未提供这个版本。请核对市场源或稍后重试。")
-            return {**release, "installed": installed}
+                result = run_codex(executable, ["plugin", "marketplace", "upgrade", "mygo", "--json"], environment, 75)
+                state = update_result(latest, installed_version(executable, environment))
+                if not state["update_available"]:
+                    return state
+                if result.returncode:
+                    raise RuntimeError(update_error(result))
+                snapshot = self.home / ".tmp/marketplaces/mygo/plugins/mygo/plugin.json"
+                marketplace_version = release_version(json.loads(snapshot.read_text(encoding="utf-8")))
+                if version_key(marketplace_version) < version_key(latest):
+                    raise RuntimeError("已刷新市场，但你的 MYGO 市场源还未提供新版。请在插件目录核对市场源。")
+                # An already-current checkout can coexist with an older installed package.
+                result = run_codex(executable, ["plugin", "add", PLUGIN_ID, "--json"], environment, 25)
+                state = update_result(latest, installed_version(executable, environment))
+                if not state["update_available"]:
+                    return state
+                if result.returncode:
+                    raise RuntimeError(update_error(result))
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("MYGO 更新超时。请检查网络，然后重新检查更新。") from None
+            except OSError:
+                raise RuntimeError("Codex 无法启动或读取插件更新。请在插件目录刷新 MYGO 市场源后重试。") from None
+            except ValueError:
+                raise RuntimeError("Codex 未能读取 MYGO 市场的版本信息。请刷新市场源后重试。") from None
+            raise RuntimeError("市场已刷新，Codex 的安装列表仍未显示新版。请在插件目录重新检查 MYGO。")
 
     def call(self, name, args):
         if name == "show_settings":
             return {"opened": True, "version": VERSION}
         if name == "check_update":
-            return check_update()
+            return self.check_update()
         if name == "update_plugin":
             return self.update_plugin()
         if name == "read_settings":
@@ -343,8 +429,7 @@ class Server:
 
 
 def main():
-    home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-    server = Server(home)
+    server = Server(profile_home(ROOT))
     sys.stdout.reconfigure(encoding="utf-8")
     for line in sys.stdin.buffer:
         try:

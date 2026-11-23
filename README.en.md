@@ -22,7 +22,7 @@ codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestr
 codex plugin add mygo@mygo
 ```
 
-Reopen Codex and send `$mygo open MYGO settings`. Follow the panel prompts to connect your providers and enable native subagents. For future updates, click **检查更新** in the settings panel or run `codex plugin marketplace upgrade mygo`.
+Reopen Codex and send `$mygo open MYGO settings`. Follow the panel prompts to connect your providers and enable native subagents. For future updates, click **检查更新** in the settings panel. The header shows the running version. Restart Codex when the panel reports that a newer version has been installed. You can also run `codex plugin marketplace upgrade mygo`.
 
 </details>
 

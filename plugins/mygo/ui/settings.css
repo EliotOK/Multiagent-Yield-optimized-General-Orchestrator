@@ -47,6 +47,7 @@ body { max-width: 950px; margin: 0 auto; padding: clamp(14px, 3.5vw, 36px); }
 h1, h2, h3, p, dl, dd { margin: 0; }
 h1 { display: flex; align-items: center; gap: 14px; font-size: 19px; font-weight: 550; }
 .wordmark { font-size: 30px; line-height: 1; font-weight: 780; letter-spacing: -.065em; }
+.plugin-version { color: var(--muted); font-size: 12px; font-weight: 550; font-variant-numeric: tabular-nums; }
 .title-divider { width: 1px; height: 21px; background: var(--control-line); transform: rotate(12deg); }
 h2 { font-size: 18px; line-height: 1.4; font-weight: 680; }
 h3 { font-size: 16px; font-weight: 680; }

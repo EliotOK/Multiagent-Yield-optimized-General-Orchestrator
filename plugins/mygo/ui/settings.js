@@ -399,16 +399,19 @@ async function updateAction(apply) {
   status.textContent = apply ? "正在下载并安装 MYGO 更新…" : "正在检查 MYGO 版本…";
   try {
     const result = await callTool(apply ? "update_plugin" : "check_update");
-    if (result.installed) {
-      status.textContent = "已安装 MYGO " + result.installed + "。请关闭并重新打开设置页。如果仍显示旧版，请重新打开 Codex。";
-    } else if (result.update_available) {
-      status.textContent = "当前 " + result.current + "，可更新到 " + result.latest + "。";
+    if (result.update_available) {
+      const installed = result.reload_required ? "，已安装 " + result.installed : "";
+      status.textContent = "当前运行 " + result.current + installed + "，可更新到 " + result.latest + "。";
       install.hidden = false;
+    } else if (result.reload_required) {
+      status.textContent = "已安装 MYGO " + result.installed + "，当前面板仍在运行 " + result.current
+        + "。请退出 Codex 后重新打开原聊天。";
     } else {
       status.textContent = "MYGO " + result.current + " 已是最新版。";
     }
   } catch (error) {
     status.textContent = error.message;
+    install.hidden = !apply;
   } finally {
     check.disabled = install.disabled = false;
   }
