@@ -98,13 +98,19 @@ function renderProviders() {
     row.appendChild(element("strong", "provider-name", provider.label));
     const statusText = provider.configured ? "密钥已配置" : provider.environment ? "检测到本机环境变量" : "尚未检测到密钥";
     row.appendChild(element("span", `provider-state${provider.configured ? " ready" : ""}`, statusText));
-    if (!provider.configured) {
+    const actions = element("div", "provider-actions");
+    if (provider.configured) {
+      const refreshButton = element("button", "secondary provider-refresh", "刷新模型列表");
+      refreshButton.type = "button";
+      refreshButton.setAttribute("aria-label", `刷新模型列表（${provider.label}）`);
+      refreshButton.addEventListener("click", () => refreshProviderModels(provider));
+      actions.appendChild(refreshButton);
+    } else {
       if (name === "glm") {
         const planField = byId("glm-plan-field").content.cloneNode(true);
         if (glmPlan) planField.querySelector("select").value = glmPlan;
         row.appendChild(planField);
       }
-      const actions = element("div", "provider-actions");
       if (provider.environment) {
         const envButton = element("button", "secondary", "从环境变量导入");
         envButton.addEventListener("click", () => importCredential(name, "environment", envButton));
@@ -113,10 +119,23 @@ function renderProviders() {
       const promptButton = element("button", "secondary", "打开密码窗口");
       promptButton.addEventListener("click", () => importCredential(name, "prompt", promptButton));
       actions.appendChild(promptButton);
-      row.appendChild(actions);
     }
+    row.appendChild(actions);
     container.appendChild(row);
   }
+}
+
+function refreshProviderModels(provider) {
+  return runSettingsAction(async () => {
+    report(`正在刷新 ${provider.label} 的模型列表…`);
+    const result = await callTool("refresh_provider_models", { provider_id: provider.provider_id });
+    await refresh();
+    const changes = [];
+    if (result.added) changes.push(`新增 ${result.added} 个`);
+    if (result.removed) changes.push(`减少 ${result.removed} 个`);
+    const summary = changes.length ? `（${changes.join("，")}）` : "，型号没有变化";
+    report(`${provider.label} 已刷新，Magpie 当前有 ${result.model_count} 个型号${summary}。`);
+  });
 }
 
 function hasPendingModels(preferences) {
@@ -333,13 +352,16 @@ async function runSettingsAction(action) {
   const refreshButton = byId("refresh");
   const saveButton = byId("save-roles");
   const configureButton = byId("configure");
+  const providerButtons = byId("providers").querySelectorAll(".provider-refresh");
   refreshButton.disabled = saveButton.disabled = configureButton.disabled = byId("rewrite").disabled = true;
+  for (const button of providerButtons) button.disabled = true;
   try {
     await action();
   } catch (error) {
     report(error.message, true);
   } finally {
     refreshButton.disabled = false;
+    for (const button of providerButtons) button.disabled = false;
     configureButton.disabled = byId("rewrite").disabled = !state;
     saveButton.disabled = !state || !rolesEdited(rolePreferences());
   }

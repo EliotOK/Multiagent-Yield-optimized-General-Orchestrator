@@ -146,7 +146,7 @@ def set_toml_key(text, section, key, value):
 
 
 def magpie_home():
-    config = os.environ.get("XDG_CONFIG_HOME")
+    config = magpie_environment().get("XDG_CONFIG_HOME", os.environ.get("XDG_CONFIG_HOME"))
     if config and Path(config).is_absolute():
         return Path(config) / "magpie"
     return Path.home() / ".config" / "magpie"
@@ -154,7 +154,7 @@ def magpie_home():
 
 def magpie_environment():
     """Keep a redirected CLI and Magpie Desktop on the same configuration."""
-    if not os.environ.get("XDG_CONFIG_HOME") or os.environ.get("MYGO_MAGPIE_EXECUTABLE"):
+    if os.name != "nt" or not os.environ.get("XDG_CONFIG_HOME") or os.environ.get("MYGO_MAGPIE_EXECUTABLE"):
         return {}
     try:
         import winreg
@@ -225,22 +225,47 @@ def model_ids(values):
     return [value for value in values if isinstance(value, str) and MODEL_PATTERN.fullmatch(value)]
 
 
+def cached_magpie_models(path, preset):
+    """Read Magpie's fetched list, which can be newer than its saved picks."""
+    try:
+        entry = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    models = entry.get("models") if isinstance(entry, dict) else None
+    if not isinstance(models, list):
+        return []
+    ids = model_ids([
+        model.get("ID") or model.get("id") for model in models
+        if isinstance(model, dict) and not (model.get("Draws") or model.get("Serves"))
+    ])
+    if preset == "google":
+        return [model.removeprefix("models/") for model in ids]
+    return ids
+
+
 def provider_state():
     try:
         data = json.loads((magpie_home() / "providers.json").read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+    cache_dir = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "magpie/models"
     result = {}
     for item in data.get("providers", []):
         if isinstance(item, dict) and isinstance(item.get("id"), str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", item["id"]):
+            provider_id = item["id"]
+            preset = item.get("preset", "")
+            configured = bool(item.get("key") or item.get("keys") or item.get("account"))
+            cached = (cached_magpie_models(cache_dir / f"{provider_id}.json", preset)
+                      if configured and not item.get("listOff") else [])
             picked = model_ids(item.get("models"))
-            discovered = model_ids(item.get("pickedFrom"))
+            discovered = model_ids(item.get("pickedFrom")) + cached
             delisted = set(model_ids(item.get("delisted")))
-            result[item.get("id", "")] = {
-                "preset": item.get("preset", ""),
-                "label": str(item.get("name") or item["id"]),
-                "configured": bool(item.get("key") or item.get("keys") or item.get("account")),
+            result[provider_id] = {
+                "preset": preset,
+                "label": str(item.get("name") or provider_id),
+                "configured": configured,
                 "models": [model for model in dict.fromkeys(discovered + picked) if model not in delisted],
+                "delisted": delisted,
             }
     return result
 
@@ -308,6 +333,7 @@ def role_model_choices(home, preferences, providers=None, catalog=None):
         options = [f"{provider_id}/{model}" for model in provider["models"]]
         options.extend(slug for slug, model in catalog.items()
                        if connected_provider(slug, providers) == provider_id
+                       and slug.partition("/")[2] not in provider["delisted"]
                        and model.get("multi_agent_version") == "v2"
                        and model.get("visibility") != "hide")
         model_groups[provider_id] = {"label": provider["label"], "options": list(dict.fromkeys(options))}

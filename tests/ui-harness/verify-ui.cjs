@@ -7,9 +7,11 @@ let browser;
 (async () => {
   const root = path.resolve(__dirname, '../..');
   const plugin = path.join(root, 'plugins/mygo');
+  const version = JSON.parse(fs.readFileSync(path.join(plugin, 'plugin.json'), 'utf8')).version;
+  const nextVersion = version.replace(/\d+$/, patch => String(Number(patch) + 1));
   const roles = JSON.parse(fs.readFileSync(path.join(plugin, 'assets/default-roles.json'), 'utf8'));
   const html = fs.readFileSync(path.join(plugin, 'ui/settings.html'), 'utf8')
-    .replace('__MYGO_VERSION__', JSON.parse(fs.readFileSync(path.join(plugin, 'plugin.json'), 'utf8')).version)
+    .replace('__MYGO_VERSION__', version)
     .replace('/* SETTINGS_CSS */', fs.readFileSync(path.join(plugin, 'ui/settings.css'), 'utf8'))
     .replace('/* SETTINGS_JS */', fs.readFileSync(path.join(plugin, 'ui/settings.js'), 'utf8'));
   const providers = {
@@ -54,10 +56,20 @@ let browser;
       let result = {};
       if (m.method === 'ui/initialize') result = { hostContext: { theme: 'dark' } };
       if (m.params?.name === 'check_update') {
-        result = { structuredContent: { current: '0.3.5', latest: window.availableUpdate ? '0.3.6' : '0.3.5', update_available: window.availableUpdate } };
+        result = { structuredContent: { current: '${version}', latest: window.availableUpdate ? '${nextVersion}' : '${version}', update_available: window.availableUpdate } };
       }
-      if (m.params?.name === 'update_plugin') result = { structuredContent: { installed: '0.3.6' } };
+      if (m.params?.name === 'update_plugin') result = { structuredContent: { installed: '${nextVersion}' } };
       if (m.method === 'tools/call' && m.params.name === 'read_settings') result = { structuredContent: window.mockState };
+      if (m.params?.name === 'refresh_provider_models' && m.params.arguments.provider_id === 'zhipu') {
+        const model = 'zhipu/glm-5.4';
+        for (const choice of Object.values(window.mockState.model_choices)) {
+          choice.groups = choice.groups.map(group => group.label === 'GLM'
+            ? {...group, options: [...group.options, model]} : group);
+          choice.options.push(model);
+          choice.needs_sync.push(model);
+        }
+        result = { structuredContent: { model_count: 3, added: 1, removed: 0 } };
+      }
       if (m.method === 'tools/call' && m.params.name === 'save_roles') {
         window.mockState.roles = m.params.arguments.preferences;
         result = { structuredContent: { saved: true, preferences: window.mockState.roles } };
@@ -78,15 +90,16 @@ let browser;
   assert.equal(await frame.locator('#apply-update').isVisible(), false);
   await page.evaluate(() => { window.availableUpdate = true; });
   await frame.getByRole('button', {name: '检查更新'}).click();
-  await frame.locator('#update-status').filter({hasText: '可更新到 0.3.6'}).waitFor();
+  await frame.locator('#update-status').filter({hasText: `可更新到 ${nextVersion}`}).waitFor();
   assert.equal(await page.evaluate(() => window.calls.some(call => call.params?.name === 'update_plugin')), false);
   await frame.getByRole('button', {name: '更新 MYGO'}).click();
-  await frame.locator('#update-status').filter({hasText: '已安装 MYGO 0.3.6'}).waitFor();
+  await frame.locator('#update-status').filter({hasText: `已安装 MYGO ${nextVersion}`}).waitFor();
   await frame.locator('#update').evaluate(el => { el.hidden = true; });
 
   assert.equal(await frame.locator('#roles select[name="model"]').count(), 1);
   assert.equal(await frame.locator('#roles input[name="model"]').count(), 0);
   assert.equal(await frame.locator('.role[data-role="builder"]').count(), 0);
+  assert.equal(await frame.locator('#providers .provider-refresh').count(), 0);
   await frame.getByText('添加供应商', { exact: true }).click();
   await frame.locator('#provider-preset').selectOption('qwen-cn');
   await frame.locator('#add-provider-key').click();
@@ -127,7 +140,7 @@ let browser;
   assert.equal(await frame.locator('#configure').isVisible(), false);
   const qwen = {label: 'Qwen', options: ['qwen-cn/qwen-model']};
   await page.evaluate((choices) => {
-    window.mockState.credentials['magpie:qwen-cn'] = {label: 'Qwen', configured: true};
+    window.mockState.credentials['magpie:qwen-cn'] = {label: 'Qwen', provider_id: 'qwen-cn', configured: true};
     window.mockState.provider_presets = {};
     window.mockState.model_choices = choices;
   }, connectedChoices([qwen, modelGroups.at(-1)]));
@@ -180,6 +193,17 @@ let browser;
   assert.equal(await researcher.locator('[name="responsibility"]').isVisible(), false);
   await researcher.getByText('分工设置', { exact: true }).click();
   await researcher.locator('[name="responsibility"]').fill('验收自定义分工');
+  const builderModel = frame.getByRole('combobox', {name: '代码构建型号'});
+  assert.equal(await builderModel.locator('option[value="zhipu/glm-5.4"]').count(), 0);
+  await glm.getByRole('button', {name: '刷新模型列表（GLM）'}).click();
+  await frame.locator('#notice').filter({hasText: '新增 1 个'}).waitFor();
+  await builderModel.locator('option[value="zhipu/glm-5.4"]').waitFor({state: 'attached'});
+  assert.equal(await builderModel.inputValue(), roles.roles.builder.model);
+  await builderModel.selectOption('zhipu/glm-5.4');
+  await frame.locator('.role[data-role="builder"]').getByRole('link', {name: '此型号需要同步到原生 V2'}).waitFor();
+  await builderModel.selectOption(roles.roles.builder.model);
+  assert.equal(await modelSelect.inputValue(), selectedModel);
+  assert.equal(await researcher.locator('[name="responsibility"]').inputValue(), '验收自定义分工');
   await frame.locator('#refresh').click();
   await frame.locator('#notice').filter({ hasText: '状态已刷新' }).waitFor();
   assert.equal(await modelSelect.inputValue(), selectedModel);
@@ -192,6 +216,8 @@ let browser;
   await frame.locator('#v2-status').filter({ hasText: '配置已更新，请重启 Codex' }).waitFor();
   assert.equal(await modelSelect.inputValue(), selectedModel);
   const calls = await page.evaluate(() => window.calls);
+  const refreshes = calls.filter(call => call.params?.name === 'refresh_provider_models');
+  assert.deepEqual(refreshes.map(call => call.params.arguments), [{provider_id: 'zhipu'}]);
   const imports = calls.filter((call) => call.params?.name === 'import_credential').map((call) => call.params.arguments);
   assert.deepEqual(imports, [
     { provider: 'qwen-cn', source: 'prompt' },
@@ -216,7 +242,8 @@ let browser;
   await frame.locator('#refresh').click();
   await frame.getByText('5 家已接入 Magpie', { exact: true }).waitFor();
   assert.equal(await frame.locator('#glm-plan').count(), 0);
-  assert.equal(await frame.locator('#providers button').count(), 0);
+  assert.equal(await frame.locator('#providers button').count(), 5);
+  assert.equal(await frame.locator('#providers .provider-refresh').count(), 5);
   assert.equal(await frame.getByText('添加供应商', {exact: true}).isVisible(), true);
   await page.close();
   await browser.close();

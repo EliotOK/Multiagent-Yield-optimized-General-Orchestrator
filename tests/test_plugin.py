@@ -63,6 +63,7 @@ class IsolatedCase(unittest.TestCase):
         self.magpie.mkdir(parents=True)
         self.environment = mock.patch.dict(os.environ, {
             "XDG_CONFIG_HOME": str(self.base / "config"),
+            "XDG_CACHE_HOME": str(self.base / "cache"),
             "CODEX_HOME": str(self.home),
             "MYGO_MAGPIE_EXECUTABLE": str(self.base / "fake-magpie"),
         }, clear=False)
@@ -219,6 +220,7 @@ class ManifestAndProtocolTests(IsolatedCase):
         self.write_providers(providers)
         catalog = {"models": [
             {"slug": "deepseek/deepseek-flash", "multi_agent_version": "v2"},
+            {"slug": "deepseek/old-model", "multi_agent_version": "v2"},
             {"slug": "gpt-6-luna", "multi_agent_version": "v2"},
             {"slug": "gpt-6.2-sol", "multi_agent_version": "v2"},
             {"slug": "gpt-reserve", "multi_agent_version": "v2", "visibility": "hide"},
@@ -232,6 +234,7 @@ class ManifestAndProtocolTests(IsolatedCase):
             "deepseek/saved-preview", "deepseek/deepseek-flash", "deepseek/deepseek-v4-pro",
         ])
         self.assertEqual(deepseek_choices["retained_model"], "deepseek/saved-preview")
+        self.assertNotIn("deepseek/old-model", deepseek_choices["options"])
         self.assertEqual(deepseek_choices["needs_sync"][:2], ["deepseek/saved-preview", "deepseek/deepseek-v4-pro"])
         self.assertEqual(result["schema"]["properties"]["researcher.model"]["enum"], deepseek_choices["options"])
         self.assertEqual(model_choices["executor"]["options"][-2:], ["gpt-6-luna", "gpt-6.2-sol"])
@@ -267,6 +270,67 @@ class ManifestAndProtocolTests(IsolatedCase):
             "  Vertex AI                     vertex          magpie provider add vertex project=<id>\n"
         )):
             self.assertEqual(fake.key_presets(), {"qwen-cn": "Qwen (China)"})
+
+    def test_refresh_provider_models_reloads_the_target_suppliers_choices(self):
+        providers = [
+            {"id": "zhipu-2", "preset": "zhipu", "key": "fixture-key",
+             "models": ["glm-5.3-flash"], "pickedFrom": ["glm-5.3-flash", "retired-model"],
+             "delisted": ["retired-model"]},
+            {"id": "qwen-cn", "preset": "qwen-cn", "models": ["unconnected-model"]},
+        ]
+        self.write_providers(providers)
+        catalog = self.home / "mygo-magpie-v2-models.json"
+        catalog.write_text(json.dumps({"models": [
+            {"slug": "zhipu-2/retired-model", "multi_agent_version": "v2"},
+        ]}), encoding="utf-8")
+        instance = mygo_server.Server(self.home)
+        instance.magpie = FakeMagpie()
+
+        def refresh(args, timeout):
+            path = self.base / "cache/magpie/models/zhipu-2.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"models": [{"ID": "glm-5.3-flash"}, {"ID": "glm-5.4"}]}), encoding="utf-8")
+
+        with mock.patch.object(instance.magpie, "run", side_effect=refresh) as cli:
+            with self.assertRaisesRegex(ValueError, "请先在 Magpie 中配置"):
+                instance.call("refresh_provider_models", {"provider_id": "qwen-cn"})
+            cli.assert_not_called()
+            result = instance.call("refresh_provider_models", {"provider_id": "zhipu-2"})
+            cli.assert_called_once_with(["provider", "refresh", "zhipu-2"], timeout=45)
+        self.assertEqual(result, {"model_count": 2, "added": 1, "removed": 0})
+        data = instance.call("read_settings", {})
+        self.assertIn("zhipu-2/glm-5.4", data["model_choices"]["builder"]["needs_sync"])
+        self.assertNotIn("zhipu-2/retired-model", data["model_choices"]["builder"]["options"])
+        self.assertEqual(data["roles"], mygo_setup.DEFAULT_ROLES)
+        self.assertFalse((self.home / "mygo/preferences.json").exists())
+
+    def test_cached_gemini_chat_models_preserve_selectable_model_ids(self):
+        self.write_providers([
+            {"id": "google", "preset": "google", "key": "fixture-key", "models": ["gemini-existing"]},
+        ])
+        cache = self.base / "cache/magpie/models/google.json"
+        cache.parent.mkdir(parents=True)
+        cache.write_text(json.dumps({"models": [
+            {"ID": "models/gemini-new"},
+            {"ID": "models/gemini-existing"},
+            {"ID": "models/embedding", "Serves": "embedding"},
+            {"ID": "models/image-only", "Draws": True},
+        ]}), encoding="utf-8")
+        ids = mygo_setup.provider_state()["google"]["models"]
+        self.assertEqual(set(ids), {"gemini-existing", "gemini-new"})
+
+    def test_refresh_provider_models_does_not_expose_raw_vendor_errors(self):
+        self.write_providers()
+        instance = mygo_server.Server(self.home)
+        instance.magpie = FakeMagpie()
+        with mock.patch.object(instance.magpie, "run", side_effect=RuntimeError("private vendor payload")):
+            response = instance.handle({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "refresh_provider_models", "arguments": {"provider_id": "zhipu"}},
+            })["result"]
+        self.assertTrue(response["isError"])
+        self.assertIn("Magpie 未能获取模型列表", response["content"][0]["text"])
+        self.assertNotIn("private vendor payload", json.dumps(response))
 
     def test_credential_window_launch_has_no_secret_or_blocking_wait(self):
         instance = mygo_server.Server(self.home)

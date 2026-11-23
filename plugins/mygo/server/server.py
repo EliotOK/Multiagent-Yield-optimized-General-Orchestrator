@@ -62,6 +62,9 @@ TOOLS = [
     definition("check_update", "Check the official MYGO marketplace for a newer version", app=True, network=True),
     definition("update_plugin", "Upgrade MYGO using the configured Codex plugin marketplace", app=True, mutating=True, network=True),
     definition("read_settings", "Read secret-free MYGO provider readiness and role preferences", app=True),
+    definition("refresh_provider_models", "Fetch the model list for one configured Magpie provider",
+               {"provider_id": {"type": "string", "minLength": 1}}, ["provider_id"],
+               app=True, mutating=True, network=True),
     definition("import_credential", "Import a provider credential in a local password window. No secret is passed to this tool", PROVIDER_PROPS, ["provider", "source"], app=True, mutating=True),
     definition("configure_native", "Install a compatible Magpie CLI if needed and enable native V2 subagents", app=True, mutating=True),
     definition("save_roles", "Save model, responsibility, and reasoning preferences", PREFERENCES_PROPS, ["preferences"], app=True, mutating=True),
@@ -190,6 +193,27 @@ class Server:
         if self.credential_process is not None and self.credential_process.poll() is None:
             raise RuntimeError("请先完成或关闭已打开的密钥窗口。")
 
+    def refresh_provider_models(self, provider_id):
+        with self.setup_lock:
+            self.check_credential_window()
+            provider = provider_state().get(provider_id) if isinstance(provider_id, str) else None
+            if not provider or not provider["configured"]:
+                raise ValueError("请先在 Magpie 中配置这家供应商。")
+            if not self.magpie.executable:
+                raise RuntimeError("未找到 Magpie CLI。请在 Magpie 中刷新模型列表，再回到 MYGO 刷新状态。")
+            before = set(provider["models"])
+            try:
+                self.magpie.run(["provider", "refresh", provider_id], timeout=45)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("刷新模型列表超时，请稍后重试。") from None
+            except (OSError, RuntimeError, subprocess.SubprocessError):
+                raise RuntimeError("Magpie 未能获取模型列表。请在 Magpie 中检查此供应商的连接后重试。") from None
+            updated = provider_state().get(provider_id)
+            if not updated or not updated["configured"]:
+                raise RuntimeError("供应商配置已变化，请刷新状态后重试。")
+            after = set(updated["models"])
+            return {"model_count": len(after), "added": len(after - before), "removed": len(before - after)}
+
     def update_plugin(self):
         with self.setup_lock:
             self.check_credential_window()
@@ -228,6 +252,8 @@ class Server:
             return self.update_plugin()
         if name == "read_settings":
             return self.read()
+        if name == "refresh_provider_models":
+            return self.refresh_provider_models(args["provider_id"])
         if name == "settings.read":
             return setting_schema(self.home, load_roles(self.home / "mygo" / "preferences.json"))
         if name == "settings.update":
