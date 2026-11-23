@@ -34,6 +34,7 @@ PENDING_KEY = "mygo-pending-not-a-key"
 NATIVE_CATALOG = "mygo-magpie-v2-models.json"
 MAGPIE_CATALOGS = ("magpie-models.json", "magpie-desktop-models.json")
 PICKER_HIDDEN = "mygo_hidden_models"
+PICKER_PREFERENCES = Path("mygo/recommended-models.json")
 
 
 def clean_text(value, limit=500):
@@ -701,8 +702,67 @@ class ConfigurationBackup:
                 os.replace(temporary, path)
 
 
+def picker_priority(entry):
+    priority = entry.get("priority")
+    return priority if isinstance(priority, int) else 0
+
+
 def picker_model_ids(models):
-    return [slug for slug, entry in models.items() if entry.get("visibility", "list") == "list"]
+    visible = (slug for slug, entry in models.items() if entry.get("visibility", "list") == "list")
+    return sorted(visible, key=lambda slug: picker_priority(models[slug]))
+
+
+def picker_preferences(home):
+    try:
+        settings = json.loads((home / PICKER_PREFERENCES).read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as error:
+        raise RuntimeError("无法读取 MYGO 推荐模型配置。") from error
+    if not isinstance(settings, dict):
+        raise ValueError("MYGO 推荐模型配置应按供应商列出型号。")
+    result = {}
+    for provider, values in settings.items():
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", provider) or not isinstance(values, list):
+            raise ValueError("MYGO 推荐模型配置中的供应商或型号列表无效。")
+        ids = model_ids(values)
+        if len(ids) != len(values):
+            raise ValueError(f"MYGO 推荐模型配置含有无效型号。供应商 {provider}")
+        result[provider] = {model: position for position, model in enumerate(dict.fromkeys(ids))}
+    return result
+
+
+def model_generation(name):
+    version = re.search(r"[0-9]+(?:\.[0-9]+)*", name)
+    return tuple(int(part) for part in version[0].split(".")) if version else ()
+
+
+def order_picker_models(models, providers, preferred):
+    native = []
+    external = {}
+    for slug in picker_model_ids(models):
+        provider, separator, _ = slug.partition("/")
+        if separator:
+            external.setdefault(provider, []).append(slug)
+        else:
+            native.append(slug)
+    preset_order = {preset: index for index, preset in enumerate(MAGPIE_PRESETS.values())}
+    provider_order = sorted(external, key=lambda provider: (
+        preset_order.get(providers.get(provider, {}).get("preset"), len(preset_order)), provider,
+    ))
+    ordered = native
+    for provider in provider_order:
+        slugs = external[provider]
+        ranks = preferred.get(provider)
+        preset = providers.get(provider, {}).get("preset")
+        if ranks is None:
+            slugs.sort(key=lambda slug: model_generation(slug.partition("/")[2]), reverse=True)
+        else:
+            slugs.sort(key=lambda slug: ranks.get(vendor_model_id(preset, slug.partition("/")[2]), len(ranks)))
+        ordered.extend(slugs)
+    # Codex sorts the picker by priority, independently of catalog array order.
+    for priority, slug in enumerate(ordered, start=1):
+        models[slug]["priority"] = priority
 
 
 def update_picker_visibility(home, catalog, preferences, providers, lead):
@@ -712,14 +772,22 @@ def update_picker_visibility(home, catalog, preferences, providers, lead):
             models[slug]["visibility"] = "list"
     choices = role_model_choices(home, preferences, providers, models)
     selectable = {slug for group in choices.values() for slug in group["options"]}
+    preferred = picker_preferences(home)
     hidden = []
     for slug, model in models.items():
-        if ("/" in slug and slug != lead and model.get("visibility", "list") == "list"
-                and (slug not in selectable or model.get("multi_agent_version") != "v2")):
+        provider, separator, name = slug.partition("/")
+        if not separator or slug == lead or model.get("visibility", "list") != "list":
+            continue
+        included = slug in selectable and model.get("multi_agent_version") == "v2"
+        if provider in preferred:
+            preset = providers.get(provider, {}).get("preset")
+            included = included and vendor_model_id(preset, name) in preferred[provider]
+        if not included:
             model["visibility"] = "hide"
             hidden.append(slug)
     if hidden:
         catalog[PICKER_HIDDEN] = hidden
+    order_picker_models(models, providers, preferred)
     return len(picker_model_ids(models))
 
 

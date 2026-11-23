@@ -42,7 +42,8 @@ let browser;
     credentials: providers, model_catalog: true, magpie_installed: true, magpie_version: "0.1.4656",
     magpie_compatible: true, v2_configured: true, missing_models: [],
     roles, model_choices: connectedChoices([modelGroups.at(-1)]), provider_presets: { "qwen-cn": "Qwen（中国区）" },
-    picker_models: modelChoices.executor.options.filter(model => !modelChoices.executor.needs_sync.includes(model)),
+    picker_models: [modelGroups.at(-1), ...modelGroups.slice(0, -1)].flatMap(group =>
+      [...group.options].reverse().filter(model => !modelChoices.executor.needs_sync.includes(model))),
   };
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1100, height: 960 } });
@@ -209,7 +210,10 @@ let browser;
   const selectedModel = alternatives.researcher[1];
   const writerModel = frame.getByRole('combobox', { name: '写作与视觉型号' });
   const geminiOption = writerModel.locator('option[value="' + pendingGemini + '"]');
-  assert.equal(await writerModel.locator('optgroup[label="Gemini"] option').count(), 2);
+  assert.deepEqual(await writerModel.locator('optgroup').evaluateAll(groups => groups.map(group => group.label)),
+    ['OpenAI', 'DeepSeek', 'GLM', 'Kimi', 'Gemini']);
+  assert.deepEqual(await writerModel.locator('optgroup[label="Gemini"] option').evaluateAll(options => options.map(option => option.value)),
+    [alternatives.writer[1], roles.roles.writer.model]);
   assert.equal(await geminiOption.count(), 0);
   assert.equal(await modelSelect.locator('option[value="' + selectedModel + '"]').count(), 0);
   await frame.getByRole('button', {name: '显示更多型号'}).click();

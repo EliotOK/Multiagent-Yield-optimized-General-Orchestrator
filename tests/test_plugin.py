@@ -598,6 +598,46 @@ class ConfigurationTests(IsolatedCase):
         self.assertEqual(models["qwen/qwen3"]["visibility"], "list")
         self.assertEqual(models["qwen/internal"]["visibility"], "hide")
 
+    def test_picker_applies_local_provider_choices_and_orders_visible_models(self):
+        google = ["gemini-3.1-flash-lite", "gemini-3.7-flash", "gemini-3.8-flash",
+                  "gemini-4-argon", "gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-neon"]
+        self.write_providers([
+            {"id": "google", "preset": "google", "key": "test-only", "models": google},
+            {"id": "moonshot-cn", "preset": "moonshot-cn", "key": "test-only",
+             "models": ["kimi-k3", "kimi-k3.1-pro"]},
+            {"id": "zhipu", "preset": "zhipu", "key": "test-only",
+             "models": ["glm-5.3-flash", "glm-5.4"]},
+            {"id": "deepseek", "preset": "deepseek", "key": "test-only", "models": ["deepseek-flash"]},
+        ])
+        (self.home / "config.toml").write_text(
+            'model = "gpt-6.2-sol"\nmodel_catalog_json = "mygo-magpie-v2-models.json"\n'
+            '[features.multi_agent_v2]\nenabled = true\n', encoding="utf-8",
+        )
+        picks = ["gemini-4-neon", "gemini-4-hydrogen", "gemini-4-carbon", "gemini-3.8-flash"]
+        mygo_setup.atomic_write(self.home / mygo_setup.PICKER_PREFERENCES, json.dumps({"google": picks}))
+        catalog = self.home / mygo_setup.NATIVE_CATALOG
+        shuffled = ["google/models/" + model for model in google] + [
+            "gpt-6.2-sol", "moonshot-cn/kimi-k3", "deepseek/deepseek-flash",
+            "zhipu/glm-5.3-flash", "gpt-6-luna", "moonshot-cn/kimi-k3.1-pro", "zhipu/glm-5.4",
+        ]
+        catalog.write_text(json.dumps({"models": [
+            {"slug": slug, "priority": i, "visibility": "list", "multi_agent_version": "v2"}
+            for i, slug in enumerate(shuffled)
+        ]}), encoding="utf-8")
+
+        instance = mygo_server.Server(self.home)
+        expected = ["gpt-6.2-sol", "gpt-6-luna", "deepseek/deepseek-flash",
+                    "moonshot-cn/kimi-k3.1-pro", "moonshot-cn/kimi-k3",
+                    "zhipu/glm-5.4", "zhipu/glm-5.3-flash",
+                    *("google/models/" + model for model in picks)]
+        result = instance.call("sync_model_picker", {})
+        self.assertEqual(result, {"visible": len(expected), "restart_required": True})
+        state = instance.call("read_settings", {})
+        self.assertEqual(state["picker_models"], expected)
+        self.assertEqual(set(state["available_models"]), set(shuffled))
+        self.assertEqual(instance.call("sync_model_picker", {}),
+                         {"visible": len(expected), "restart_required": False})
+
     def test_signed_in_sync_loads_gateway_catalog_without_legacy_files(self):
         self.write_providers()
         (self.home / "config.toml").write_text(

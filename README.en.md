@@ -36,7 +36,9 @@ By default, **DeepSeek** searches logs and sources, **GLM** drafts code, **Luna*
 
 To use another provider such as Qwen, open **供应商密钥**, choose **添加供应商**, and refresh the panel after adding your key. Pick a connected model for a role and sync the selected models when prompted.
 
-The role picker shows synced models by default. To use a new model, click **刷新模型列表** under its provider, then **显示更多型号** in the roles section. Pick the model and sync it when prompted. **同步 Codex 模型菜单** writes the chat picker with the built-in Codex models and synced models available in MYGO. Codex loads the new list when it next starts.
+The role picker shows synced models by default. To use a new model, click **刷新模型列表** under its provider, then **显示更多型号** in the roles section. Pick the model and sync it when prompted. **同步 Codex 模型菜单** writes the chat picker with the built-in Codex models and synced models available in MYGO. Built-in Codex models come first, followed by external models grouped by provider with newer versions first. Codex loads the new list when it next starts.
+
+To pin the recommendations on this device, list synced model IDs for each provider in `mygo/recommended-models.json` under the Codex configuration directory. The array sets the order within that provider.
 
 External models receive the material assigned to them. To limit what you share, say so in the request, for example “Send only this log excerpt to DeepSeek.”
 

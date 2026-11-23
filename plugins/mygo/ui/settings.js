@@ -188,7 +188,7 @@ async function importCredential(provider, source, button) {
 
 function renderRoles(preferences) {
   const container = byId("roles");
-  const pickerModels = new Set(state.picker_models);
+  const pickerModels = new Map(state.picker_models.map((model, index) => [model, index]));
   const compactPicker = state.v2_configured && state.model_catalog;
   const hasMoreModels = Object.values(state.model_choices).some(group =>
     group.options.some(model => !pickerModels.has(model)));
@@ -267,11 +267,19 @@ function renderRoles(preferences) {
 function fillModelChoices(select, group, value = "", listed = null) {
   select.replaceChildren();
   const pending = new Set(group.needs_sync);
-  for (const provider of group.groups) {
+  let providers = group.groups;
+  if (listed) {
+    const rank = model => listed.get(model) ?? listed.size;
+    providers = providers.map(provider => ({
+      label: provider.label,
+      options: provider.options.filter(id => id === value || listed.has(id)).sort((a, b) => rank(a) - rank(b)),
+    })).filter(provider => provider.options.length);
+    providers.sort((a, b) => rank(a.options[0]) - rank(b.options[0]));
+  }
+  for (const provider of providers) {
     const choices = element("optgroup");
     choices.label = provider.label;
     for (const id of provider.options) {
-      if (listed && id !== value && !listed.has(id)) continue;
       const name = id.includes("/") ? id.slice(id.indexOf("/") + 1).replace(/^models\//, "") : id;
       const tag = state.v2_configured && pending.has(id) ? "（待同步）"
         : id === group.retained_model ? "（已保存）" : "";
