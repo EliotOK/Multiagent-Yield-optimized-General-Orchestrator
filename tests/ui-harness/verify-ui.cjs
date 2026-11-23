@@ -27,19 +27,22 @@ let browser;
     writer: ['Gemini', 'google/gemini-3.5-flash'],
     executor: ['OpenAI', 'gpt-6.2-sol'],
   };
+  const pendingGemini = 'google/gemini-pro-latest';
   const modelGroups = Object.entries(alternatives).map(([role, [label, model]]) => ({
-    label, options: [roles.roles[role].model, model],
+    label, options: role === 'writer' ? [roles.roles[role].model, model, pendingGemini] : [roles.roles[role].model, model],
   }));
   const connectedChoices = (groups) => Object.fromEntries(Object.keys(roles.roles).map(role => [role, {
     groups, options: groups.flatMap(group => group.options),
     retained_model: null,
-    needs_sync: groups.flatMap(group => group.options).filter(model => model.startsWith('qwen-cn/') || model === alternatives.researcher[1]),
+    needs_sync: groups.flatMap(group => group.options).filter(model =>
+      model.startsWith('qwen-cn/') || model === alternatives.researcher[1] || model === pendingGemini),
   }]));
   const modelChoices = connectedChoices(modelGroups);
   const state = {
     credentials: providers, model_catalog: true, magpie_installed: true, magpie_version: "0.1.4656",
     magpie_compatible: true, v2_configured: true, missing_models: [],
     roles, model_choices: connectedChoices([modelGroups.at(-1)]), provider_presets: { "qwen-cn": "Qwen（中国区）" },
+    picker_models: modelChoices.executor.options.filter(model => !modelChoices.executor.needs_sync.includes(model)),
   };
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1100, height: 960 } });
@@ -85,7 +88,10 @@ let browser;
         result = { structuredContent: { visible: 39, restart_required: true } };
       }
       if (m.method === 'tools/call' && m.params.name === 'configure_native') {
-        window.mockState.model_choices.researcher.needs_sync = [];
+        const model = window.mockState.roles.roles.researcher.model;
+        window.mockState.model_choices.researcher.needs_sync =
+          window.mockState.model_choices.researcher.needs_sync.filter(pending => pending !== model);
+        window.mockState.picker_models.push(model);
         result = { structuredContent: { backup: 'isolated-test/backup', visible: 39, restart_required: true } };
       }
       event.source.postMessage({ jsonrpc: '2.0', id: m.id, result }, '*');
@@ -201,7 +207,17 @@ let browser;
   const researcher = frame.locator('.role[data-role="researcher"]');
   const modelSelect = researcher.locator('select[name="model"]');
   const selectedModel = alternatives.researcher[1];
+  const writerModel = frame.getByRole('combobox', { name: '写作与视觉型号' });
+  const geminiOption = writerModel.locator('option[value="' + pendingGemini + '"]');
+  assert.equal(await writerModel.locator('optgroup[label="Gemini"] option').count(), 2);
+  assert.equal(await geminiOption.count(), 0);
+  assert.equal(await modelSelect.locator('option[value="' + selectedModel + '"]').count(), 0);
+  await frame.getByRole('button', {name: '显示更多型号'}).click();
+  assert.match(await geminiOption.textContent(), /待同步/);
   await modelSelect.selectOption(selectedModel);
+  await frame.getByRole('button', {name: '仅显示已同步'}).click();
+  assert.equal(await geminiOption.count(), 0);
+  assert.equal(await modelSelect.inputValue(), selectedModel);
   await researcher.getByRole('link', { name: '此型号需要同步到原生 V2' }).waitFor();
   await frame.locator('#configure').filter({ hasText: '同步所选模型' }).waitFor();
   assert.equal(await researcher.locator('[name="responsibility"]').isVisible(), false);
@@ -211,6 +227,8 @@ let browser;
   assert.equal(await builderModel.locator('option[value="zhipu/glm-5.4"]').count(), 0);
   await glm.getByRole('button', {name: '刷新模型列表（GLM）'}).click();
   await frame.locator('#notice').filter({hasText: '新增 1 个'}).waitFor();
+  assert.equal(await builderModel.locator('option[value="zhipu/glm-5.4"]').count(), 0);
+  await frame.getByRole('button', {name: '显示更多型号'}).click();
   await builderModel.locator('option[value="zhipu/glm-5.4"]').waitFor({state: 'attached'});
   assert.equal(await builderModel.inputValue(), roles.roles.builder.model);
   await builderModel.selectOption('zhipu/glm-5.4');
@@ -230,7 +248,8 @@ let browser;
   await frame.locator('#v2-status').filter({ hasText: '配置已更新，请重启 Codex' }).waitFor();
   assert.equal(await modelSelect.inputValue(), selectedModel);
   await frame.getByRole('button', { name: '同步 Codex 模型菜单' }).click();
-  await frame.locator('#notice').filter({ hasText: 'Codex 模型菜单包含 39 个型号' }).waitFor();
+  await frame.locator('#notice').filter({ hasText: '本地模型菜单已写入 39 个型号' }).waitFor();
+  assert.equal(await geminiOption.count(), 0);
   const calls = await page.evaluate(() => window.calls);
   const refreshes = calls.filter(call => call.params?.name === 'refresh_provider_models');
   assert.deepEqual(refreshes.map(call => call.params.arguments), [{provider_id: 'zhipu'}]);

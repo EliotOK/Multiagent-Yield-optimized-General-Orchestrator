@@ -563,6 +563,9 @@ class ConfigurationTests(IsolatedCase):
         instance = mygo_server.Server(self.home)
         status = instance.call("read_settings", {})
         writer = status["model_choices"]["writer"]
+        self.assertIn("google/models/gemini-4-hydrogen", status["picker_models"])
+        self.assertNotIn("gpt-hidden", status["picker_models"])
+        self.assertNotIn("google/gemini-future", status["picker_models"])
         self.assertIn("google/models/gemini-4-hydrogen", writer["options"])
         self.assertNotIn("google/gemini-4-hydrogen", writer["options"])
         self.assertEqual(writer["needs_sync"], ["google/gemini-future", "google/gemini-old"])

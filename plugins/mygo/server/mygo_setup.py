@@ -701,6 +701,10 @@ class ConfigurationBackup:
                 os.replace(temporary, path)
 
 
+def picker_model_ids(models):
+    return [slug for slug, entry in models.items() if entry.get("visibility", "list") == "list"]
+
+
 def update_picker_visibility(home, catalog, preferences, providers, lead):
     models = models_by_slug(catalog)
     for slug in model_ids(catalog.pop(PICKER_HIDDEN, None)):
@@ -716,7 +720,7 @@ def update_picker_visibility(home, catalog, preferences, providers, lead):
             hidden.append(slug)
     if hidden:
         catalog[PICKER_HIDDEN] = hidden
-    return sum(model.get("visibility", "list") == "list" for model in models.values())
+    return len(picker_model_ids(models))
 
 
 def uses_native_catalog(home, settings):
@@ -870,7 +874,8 @@ def status(home, magpie=None):
         "magpie_compatible": bool(version and tuple(map(int, version.split("."))) >= MINIMUM_MAGPIE),
         "v2_configured": uses_native_catalog(home, settings),
         "code_mode": bool(re.search(r"(?m)^code_mode\s*=\s*true\s*$", config)),
-        "model_catalog": catalog.exists(),
+        "model_catalog": bool(models),
+        "picker_models": picker_model_ids(models),
         "roles": roles,
         "model_choices": role_model_choices(home, roles, providers, models),
         "available_models": list(models),

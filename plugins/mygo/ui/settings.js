@@ -11,6 +11,7 @@ let requestId = 0;
 let state = null;
 let bridgeReady;
 let restartPending = false;
+let showAllModels = false;
 
 function notify(method, params = {}) {
   window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
@@ -166,7 +167,8 @@ function renderNativeStatus() {
   const cli = state.magpie_version ? `版本 ${state.magpie_version}` : state.magpie_installed ? "版本未识别" : "未检测到";
   byId("cli-detail").textContent = state.magpie_compatible ? cli : `${cli}。下次写入配置时将准备兼容版本。`;
   byId("catalog-detail").textContent = !state.model_catalog ? "未找到本地目录"
-    : needsSync ? "待写入所选型号" : configured ? "已关联本地目录" : "已有本地目录，尚未启用";
+    : configured ? "已写入 " + state.picker_models.length + " 个型号。Codex 下次启动时加载。"
+    : "已有本地目录，尚未启用";
 
 }
 
@@ -186,6 +188,15 @@ async function importCredential(provider, source, button) {
 
 function renderRoles(preferences) {
   const container = byId("roles");
+  const pickerModels = new Set(state.picker_models);
+  const compactPicker = state.v2_configured && state.model_catalog;
+  const hasMoreModels = Object.values(state.model_choices).some(group =>
+    group.options.some(model => !pickerModels.has(model)));
+  const allModels = byId("all-models");
+  allModels.hidden = !compactPicker || !hasMoreModels;
+  allModels.textContent = showAllModels ? "仅显示已同步" : "显示更多型号";
+  const listed = compactPicker && !showAllModels ? pickerModels : null;
+
   const expandedRoles = new Set([...container.querySelectorAll(".role details[open]")].map((details) =>
     details.closest(".role").dataset.role));
   container.replaceChildren();
@@ -205,7 +216,7 @@ function renderRoles(preferences) {
 
     const model = element("select");
     model.name = "model";
-    fillModelChoices(model, group, role.model);
+    fillModelChoices(model, group, role.model, listed);
     model.setAttribute("aria-label", roleTitles[key] + "型号");
     const modelField = element("div", "model-field");
     const note = element("a", "model-note", "此型号需要同步到原生 V2");
@@ -253,17 +264,20 @@ function renderRoles(preferences) {
   if (!byId("role-add").hidden) updateRoleAssignment();
 }
 
-function fillModelChoices(select, group, value = "") {
+function fillModelChoices(select, group, value = "", listed = null) {
   select.replaceChildren();
+  const pending = new Set(group.needs_sync);
   for (const provider of group.groups) {
     const choices = element("optgroup");
     choices.label = provider.label;
     for (const id of provider.options) {
+      if (listed && id !== value && !listed.has(id)) continue;
       const name = id.includes("/") ? id.slice(id.indexOf("/") + 1).replace(/^models\//, "") : id;
-      const label = provider.label + " · " + name;
-      choices.appendChild(new Option(id === group.retained_model ? label + "（已保存）" : label, id));
+      const tag = state.v2_configured && pending.has(id) ? "（待同步）"
+        : id === group.retained_model ? "（已保存）" : "";
+      choices.appendChild(new Option(provider.label + " · " + name + tag, id));
     }
-    select.appendChild(choices);
+    if (choices.children.length) select.appendChild(choices);
   }
   if (value) select.value = value;
 }
@@ -272,6 +286,12 @@ function updateRoleAssignment() {
   fillModelChoices(byId("role-model"), state.model_choices[byId("role-slot").value]);
 }
 
+byId("all-models").addEventListener("click", () => {
+  const draft = rolePreferences();
+  showAllModels = !showAllModels;
+  renderRoles(draft);
+  resize();
+});
 byId("role-slot").addEventListener("change", updateRoleAssignment);
 byId("assign-role").addEventListener("click", () => {
   const draft = rolePreferences();
@@ -384,6 +404,7 @@ function writeNative(repair = false) {
     if (rolesEdited(rolePreferences())) await saveRoles();
     const result = await callTool("configure_native", { repair });
     restartPending = result.restart_required === true;
+    showAllModels = false;
     const backup = result.backup ? `\n备份目录 ${result.backup}` : "";
     report("已同步模型。Codex 模型菜单包含 " + result.visible + " 个型号。请退出并重新打开 Codex。" + backup);
     await refresh();
@@ -394,8 +415,7 @@ byId("rewrite").addEventListener("click", () => writeNative(true));
 byId("sync-picker").addEventListener("click", () => runSettingsAction(async () => {
   const result = await callTool("sync_model_picker");
   restartPending ||= result.restart_required === true;
-  const restart = restartPending ? "请退出并重新打开 Codex。" : "";
-  report("Codex 模型菜单包含 " + result.visible + " 个型号。" + restart);
+  report("本地模型菜单已写入 " + result.visible + " 个型号。Codex 下次启动时加载。");
   await refresh();
 }));
 
