@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from mygo_setup import (
     DEFAULT_ROLES, EFFORTS, Magpie, MAGPIE_PRESETS, MINIMUM_MAGPIE, PROVIDERS,
     configure, credential_status, find_codex, provider_state,
-    install_magpie, managed_magpie_path, load_roles, role_model_choices, save_roles, status,
+    install_magpie, managed_magpie_path, load_roles, role_model_choices, save_roles, status, sync_model_picker,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,7 +69,9 @@ TOOLS = [
                {"provider_id": {"type": "string", "minLength": 1}}, ["provider_id"],
                app=True, mutating=True, network=True),
     definition("import_credential", "Import a provider credential in a local password window. No secret is passed to this tool", PROVIDER_PROPS, ["provider", "source"], app=True, mutating=True),
-    definition("configure_native", "Install a compatible Magpie CLI if needed and enable native V2 subagents", app=True, mutating=True),
+    definition("sync_model_picker", "Show synced MYGO models in the Codex model picker", app=True, mutating=True),
+    definition("configure_native", "Enable native V2 subagents or synchronize their model catalog",
+               {"repair": {"type": "boolean"}}, app=True, mutating=True),
     definition("save_roles", "Save model, responsibility, and reasoning preferences", PREFERENCES_PROPS, ["preferences"], app=True, mutating=True),
     definition("settings.read", "Read MYGO settings", app=True),
     definition("settings.update", "Update MYGO role preferences", {"set": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}}}, ["set"], app=True, mutating=True),
@@ -99,7 +101,7 @@ def setting_schema(home, preferences):
                 properties[prefix + field]["enum"] = sorted(EFFORTS)
             if field == "model":
                 properties[prefix + field]["enum"] = choices[key]["options"]
-            values[prefix + field] = role[field]
+            values[prefix + field] = choices[key]["model"] if field == "model" else role[field]
         groups.append({"kind": "group", "title": f"{key} · {role['label']}", "items": [{"kind": "property", "property": prefix + field} for field in ("label", "model", "responsibility", "effort")]})
     return {"schema": {"type": "object", "properties": properties, "required": list(properties)}, "values": values, "layout": groups}
 
@@ -360,12 +362,16 @@ class Server:
                 return {"saved": True, "preferences": save_roles(self.home / "mygo" / "preferences.json", args["preferences"])}
         if name == "import_credential":
             return self.import_credential(args)
+        if name == "sync_model_picker":
+            with self.setup_lock:
+                self.check_credential_window()
+                return sync_model_picker(self.home)
         if name == "configure_native":
             with self.setup_lock:
                 self.check_credential_window()
                 self.ensure_magpie()
                 self.magpie.ensure_gateway()
-                result = configure(self.home, self.magpie, apply=True)
+                result = configure(self.home, self.magpie, apply=True, repair=args.get("repair") is True)
                 result["credentials"] = credential_status()
                 return result
         raise ValueError("Unknown MYGO tool.")

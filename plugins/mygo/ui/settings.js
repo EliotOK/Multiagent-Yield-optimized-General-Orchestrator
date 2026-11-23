@@ -147,7 +147,7 @@ function renderNativeStatus() {
   const preferences = rolePreferences();
   const needsSync = hasPendingModels(preferences);
   const status = byId("v2-status");
-  const configured = state.v2_configured;
+  const configured = state.v2_configured && state.model_catalog;
   const hasExternalRole = Object.entries(preferences.roles).some(([key, role]) =>
     role.model.includes("/") && state.model_choices[key].options.includes(role.model));
   const ready = configured && !needsSync;
@@ -162,6 +162,7 @@ function renderNativeStatus() {
   action.hidden = ready || !hasExternalRole;
   action.textContent = needsSync ? "同步所选模型" : "启用原生子代理";
   byId("rewrite").hidden = !ready || !hasExternalRole;
+  byId("sync-picker").hidden = !configured;
   const cli = state.magpie_version ? `版本 ${state.magpie_version}` : state.magpie_installed ? "版本未识别" : "未检测到";
   byId("cli-detail").textContent = state.magpie_compatible ? cli : `${cli}。下次写入配置时将准备兼容版本。`;
   byId("catalog-detail").textContent = !state.model_catalog ? "未找到本地目录"
@@ -258,7 +259,7 @@ function fillModelChoices(select, group, value = "") {
     const choices = element("optgroup");
     choices.label = provider.label;
     for (const id of provider.options) {
-      const name = id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
+      const name = id.includes("/") ? id.slice(id.indexOf("/") + 1).replace(/^models\//, "") : id;
       const label = provider.label + " · " + name;
       choices.appendChild(new Option(id === group.retained_model ? label + "（已保存）" : label, id));
     }
@@ -353,7 +354,9 @@ async function runSettingsAction(action) {
   const saveButton = byId("save-roles");
   const configureButton = byId("configure");
   const providerButtons = byId("providers").querySelectorAll(".provider-refresh");
-  refreshButton.disabled = saveButton.disabled = configureButton.disabled = byId("rewrite").disabled = true;
+  const nativeButtons = [configureButton, byId("rewrite"), byId("sync-picker")];
+  refreshButton.disabled = saveButton.disabled = true;
+  for (const button of nativeButtons) button.disabled = true;
   for (const button of providerButtons) button.disabled = true;
   try {
     await action();
@@ -362,7 +365,7 @@ async function runSettingsAction(action) {
   } finally {
     refreshButton.disabled = false;
     for (const button of providerButtons) button.disabled = false;
-    configureButton.disabled = byId("rewrite").disabled = !state;
+    for (const button of nativeButtons) button.disabled = !state;
     saveButton.disabled = !state || !rolesEdited(rolePreferences());
   }
 }
@@ -375,19 +378,26 @@ byId("save-roles").addEventListener("click", () => runSettingsAction(async () =>
   await saveRoles();
   report(hasPendingModels(state.roles) ? "分工预设已保存。请在原生子代理区同步所选型号。" : "分工预设已保存。");
 }));
-function writeNative() {
+function writeNative(repair = false) {
   return runSettingsAction(async () => {
     report("正在写入模型目录和原生子代理配置…");
     if (rolesEdited(rolePreferences())) await saveRoles();
-    const result = await callTool("configure_native");
+    const result = await callTool("configure_native", { repair });
     restartPending = result.restart_required === true;
     const backup = result.backup ? `\n备份目录 ${result.backup}` : "";
-    report(`配置完成。请重启 Codex 以加载模型目录。${backup}`);
+    report("已同步模型。Codex 模型菜单包含 " + result.visible + " 个型号。请退出并重新打开 Codex。" + backup);
     await refresh();
   });
 }
-byId("configure").addEventListener("click", writeNative);
-byId("rewrite").addEventListener("click", writeNative);
+byId("configure").addEventListener("click", () => writeNative());
+byId("rewrite").addEventListener("click", () => writeNative(true));
+byId("sync-picker").addEventListener("click", () => runSettingsAction(async () => {
+  const result = await callTool("sync_model_picker");
+  restartPending ||= result.restart_required === true;
+  const restart = restartPending ? "请退出并重新打开 Codex。" : "";
+  report("Codex 模型菜单包含 " + result.visible + " 个型号。" + restart);
+  await refresh();
+}));
 
 async function updateAction(apply) {
   const check = byId("check-update");

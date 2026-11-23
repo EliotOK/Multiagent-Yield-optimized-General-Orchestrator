@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from http.client import HTTPConnection, HTTPSConnection, HTTPException
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import tempfile
 import time
 import tomllib
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +31,9 @@ MINIMUM_MAGPIE = (0, 1, 4656)
 MODEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,199}$")
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 PENDING_KEY = "mygo-pending-not-a-key"
+NATIVE_CATALOG = "mygo-magpie-v2-models.json"
+MAGPIE_CATALOGS = ("magpie-models.json", "magpie-desktop-models.json")
+PICKER_HIDDEN = "mygo_hidden_models"
 
 
 def clean_text(value, limit=500):
@@ -225,7 +230,11 @@ def model_ids(values):
     return [value for value in values if isinstance(value, str) and MODEL_PATTERN.fullmatch(value)]
 
 
-def cached_magpie_models(path, preset):
+def vendor_model_id(preset, model):
+    return model.removeprefix("models/") if preset == "google" else model
+
+
+def cached_magpie_models(path):
     """Read Magpie's fetched list, which can be newer than its saved picks."""
     try:
         entry = json.loads(path.read_text(encoding="utf-8"))
@@ -234,13 +243,10 @@ def cached_magpie_models(path, preset):
     models = entry.get("models") if isinstance(entry, dict) else None
     if not isinstance(models, list):
         return []
-    ids = model_ids([
+    return model_ids([
         model.get("ID") or model.get("id") for model in models
         if isinstance(model, dict) and not (model.get("Draws") or model.get("Serves"))
     ])
-    if preset == "google":
-        return [model.removeprefix("models/") for model in ids]
-    return ids
 
 
 def provider_state():
@@ -255,16 +261,16 @@ def provider_state():
             provider_id = item["id"]
             preset = item.get("preset", "")
             configured = bool(item.get("key") or item.get("keys") or item.get("account"))
-            cached = (cached_magpie_models(cache_dir / f"{provider_id}.json", preset)
+            cached = (cached_magpie_models(cache_dir / f"{provider_id}.json")
                       if configured and not item.get("listOff") else [])
-            picked = model_ids(item.get("models"))
-            discovered = model_ids(item.get("pickedFrom")) + cached
-            delisted = set(model_ids(item.get("delisted")))
+            available = model_ids(item.get("pickedFrom")) + cached + model_ids(item.get("models"))
+            available = dict.fromkeys(vendor_model_id(preset, model) for model in available)
+            delisted = {vendor_model_id(preset, model) for model in model_ids(item.get("delisted"))}
             result[provider_id] = {
                 "preset": preset,
                 "label": str(item.get("name") or provider_id),
                 "configured": configured,
-                "models": [model for model in dict.fromkeys(discovered + picked) if model not in delisted],
+                "models": [model for model in available if model not in delisted],
                 "delisted": delisted,
             }
     return result
@@ -295,11 +301,19 @@ def credential_status(existing=None):
     return result
 
 
-def catalog_models(path):
+def read_catalog(path):
     try:
         catalog = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return {}
+    return catalog if models_by_slug(catalog) else {}
+
+
+def catalog_models(path):
+    return models_by_slug(read_catalog(path))
+
+
+def models_by_slug(catalog):
     entries = catalog.get("models") if isinstance(catalog, dict) else None
     if not isinstance(entries, list):
         return {}
@@ -320,23 +334,56 @@ def connected_provider(slug, providers):
                  if item["configured"] and item["preset"] == prefix), None)
 
 
+def gemini_aliases(catalog, providers):
+    # Magpie's Gemini catalog can prefix a model ID with "models/". Keep
+    # the exact V2 slug and collapse duplicate aliases in the picker.
+    preferred = {}
+    for slug, entry in catalog.items():
+        provider, _, model = slug.partition("/")
+        if not model or providers.get(provider, {}).get("preset") != "google":
+            continue
+        if entry.get("multi_agent_version") != "v2":
+            continue
+        bare = f"{provider}/{model.removeprefix('models/')}"
+        if bare not in preferred or slug == bare:
+            preferred[bare] = slug
+    aliases = {}
+    for bare, slug in preferred.items():
+        provider, model = bare.split("/", 1)
+        aliases[bare] = aliases[f"{provider}/models/{model}"] = slug
+    return aliases
+
+
+def resolve_role_models(preferences, aliases):
+    return {**preferences, "roles": {
+        key: {**role, "model": aliases.get(role["model"], role["model"])}
+        for key, role in preferences["roles"].items()
+    }}
+
+
 def role_model_choices(home, preferences, providers=None, catalog=None):
     if providers is None:
         providers = provider_state()
     if catalog is None:
-        catalog = catalog_models(home / "mygo-magpie-v2-models.json")
+        catalog = catalog_models(home / NATIVE_CATALOG)
+    aliases = gemini_aliases(catalog, providers)
 
     model_groups = {}
     for provider_id, provider in providers.items():
         if not provider["configured"]:
             continue
         options = [f"{provider_id}/{model}" for model in provider["models"]]
-        options.extend(slug for slug, model in catalog.items()
-                       if connected_provider(slug, providers) == provider_id
-                       and slug.partition("/")[2] not in provider["delisted"]
-                       and model.get("multi_agent_version") == "v2"
-                       and model.get("visibility") != "hide")
-        model_groups[provider_id] = {"label": provider["label"], "options": list(dict.fromkeys(options))}
+        for slug, entry in catalog.items():
+            if connected_provider(slug, providers) != provider_id:
+                continue
+            name = vendor_model_id(provider["preset"], slug.split("/", 1)[1])
+            if (name not in provider["delisted"] and entry.get("multi_agent_version") == "v2"
+                    and entry.get("visibility") != "hide"):
+                options.append(slug)
+        model_groups[provider_id] = {
+            "label": provider["label"],
+            "options": list(dict.fromkeys(aliases.get(slug, slug) for slug in options)),
+        }
 
     codex_models = catalog_models(home / "models_cache.json") | catalog
     native = [
@@ -348,7 +395,7 @@ def role_model_choices(home, preferences, providers=None, catalog=None):
 
     result = {}
     for key, role in preferences["roles"].items():
-        current = role["model"]
+        current = aliases.get(role["model"], role["model"])
         group_id = "@codex" if current.startswith("gpt-") and "/" not in current else connected_provider(current, providers)
         group = model_groups.get(group_id)
         groups = {name: {"label": item["label"], "options": list(item["options"])}
@@ -360,6 +407,7 @@ def role_model_choices(home, preferences, providers=None, catalog=None):
         result[key] = {
             "provider": group["label"] if group else None,
             "active": group is not None,
+            "model": current,
             "groups": [item for item in groups.values() if item["options"]],
             "options": options,
             "retained_model": current if retained else None,
@@ -487,7 +535,8 @@ class Magpie:
             slug = role["model"]
             provider_id = connected_provider(slug, providers)
             if provider_id:
-                choices.setdefault(provider_id, set()).add(slug.partition("/")[2])
+                name = vendor_model_id(providers[provider_id]["preset"], slug.partition("/")[2])
+                choices.setdefault(provider_id, set()).add(name)
         for provider_id, models in choices.items():
             available = set(providers[provider_id]["models"])
             if not models.issubset(available):
@@ -518,12 +567,67 @@ class Magpie:
             raise RuntimeError("Codex's current lead model ID is invalid.")
         self.run(["codex", model], timeout=120, home=home)
         self.run(["codex", "subagent", ""], timeout=120, home=home)
-        deadline = time.monotonic() + 30
-        while not (home / "magpie-models.json").exists():
-            if time.monotonic() >= deadline:
-                raise RuntimeError("Magpie did not write its Codex model catalog within 30 seconds.")
-            time.sleep(0.5)
         return model
+
+    def codex_catalog(self, settings):
+        # Magpie serves Codex's full catalog format separately from /v1/models.
+        # Use the local gateway already configured for Codex, without passing keys.
+        providers = settings.get("model_providers")
+        table = providers.get("magpie") if isinstance(providers, dict) else None
+        magpie_url = table.get("base_url") if isinstance(table, dict) else None
+        origins = set()
+        for base_url in (settings.get("openai_base_url"), magpie_url):
+            if not isinstance(base_url, str):
+                continue
+            try:
+                url = urlsplit(base_url)
+                if (url.scheme not in {"http", "https"} or url.hostname not in {"127.0.0.1", "::1", "localhost"}
+                        or url.path.rstrip("/") not in {"/v1", "/backend-api/codex"}):
+                    continue
+                origin = (url.scheme, url.hostname, url.port)
+            except ValueError:
+                continue
+            if origin in origins:
+                continue
+            origins.add(origin)
+            connection_type = HTTPConnection if url.scheme == "http" else HTTPSConnection
+            connection = connection_type(url.hostname, url.port, timeout=6)
+            try:
+                # Magpie caps older clients at about 1 MiB.
+                connection.request("GET", "/v1/codex/models?client_version=0.166.0")
+                response = connection.getresponse()
+                if response.status == 200:
+                    maximum = 32 * 1024 * 1024
+                    payload = response.read(maximum + 1)
+                    if len(payload) <= maximum:
+                        catalog = json.loads(payload)
+                        if models_by_slug(catalog):
+                            return catalog
+            except (OSError, ValueError, HTTPException):
+                pass
+            finally:
+                connection.close()
+        return {}
+
+
+def magpie_codex_catalog(home, magpie, settings):
+    # In ChatGPT mode the file may be absent, especially while MYGO's own
+    # model_catalog_json is installed. In provider mode Magpie also writes
+    # its catalog to disk, which supports gateways that need their own key.
+    filenames = MAGPIE_CATALOGS if settings.get("model_provider") == "magpie" else MAGPIE_CATALOGS[::-1]
+    local = next((catalog for name in filenames if (catalog := read_catalog(home / name))), {})
+    source = magpie.codex_catalog(settings) or local
+    if not source:
+        raise RuntimeError("无法读取 Magpie 的 Codex 模型目录。请确认 Magpie 正在运行，再同步一次。")
+
+    # The local catalog endpoint serves Magpie's models. Preserve the built-in
+    # Codex entries that the ChatGPT account has already loaded.
+    native = {}
+    for models in (models_by_slug(local), catalog_models(home / NATIVE_CATALOG),
+                   catalog_models(home / "models_cache.json")):
+        native.update((slug, entry) for slug, entry in models.items() if "/" not in slug)
+    combined = native | models_by_slug(source)
+    return {**source, "models": list(combined.values())}
 
 
 def install_magpie(destination, version=MAGPIE_VERSION):
@@ -573,9 +677,12 @@ def codex_capability_check(home):
 
 
 class ConfigurationBackup:
-    def __init__(self, home):
+    def __init__(self, home, paths=None):
         self.home = home
-        self.paths = [home / "config.toml", home / "magpie-models.json", home / "mygo-magpie-v2-models.json"]
+        self.paths = paths if paths is not None else [
+            home / "config.toml", home / NATIVE_CATALOG, home / "mygo/preferences.json",
+            *(home / name for name in MAGPIE_CATALOGS),
+        ]
         self.original = {path: path.read_bytes() if path.exists() else None for path in self.paths}
         self.directory = home / "backups" / "mygo" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         for path, content in self.original.items():
@@ -594,39 +701,117 @@ class ConfigurationBackup:
                 os.replace(temporary, path)
 
 
-def configure(home, magpie, apply=False):
-    preferences = load_roles(home / "mygo" / "preferences.json")
+def update_picker_visibility(home, catalog, preferences, providers, lead):
+    models = models_by_slug(catalog)
+    for slug in model_ids(catalog.pop(PICKER_HIDDEN, None)):
+        if models.get(slug, {}).get("visibility") == "hide":
+            models[slug]["visibility"] = "list"
+    choices = role_model_choices(home, preferences, providers, models)
+    selectable = {slug for group in choices.values() for slug in group["options"]}
+    hidden = []
+    for slug, model in models.items():
+        if ("/" in slug and slug != lead and model.get("visibility", "list") == "list"
+                and (slug not in selectable or model.get("multi_agent_version") != "v2")):
+            model["visibility"] = "hide"
+            hidden.append(slug)
+    if hidden:
+        catalog[PICKER_HIDDEN] = hidden
+    return sum(model.get("visibility", "list") == "list" for model in models.values())
+
+
+def uses_native_catalog(home, settings):
+    configured_path = settings.get("model_catalog_json")
+    features = settings.get("features")
+    v2 = features.get("multi_agent_v2") if isinstance(features, dict) else None
+    v2_enabled = v2 is True or (isinstance(v2, dict) and v2.get("enabled") is True)
+    return (v2_enabled and isinstance(configured_path, str)
+            and (home / configured_path) == home / NATIVE_CATALOG)
+
+
+def sync_model_picker(home):
+    path = home / NATIVE_CATALOG
+    preferences_path = home / "mygo/preferences.json"
+    try:
+        settings = tomllib.loads(read_config(home))
+        if not uses_native_catalog(home, settings):
+            raise RuntimeError("请先在 MYGO 中启用原生子代理。")
+        original = path.read_bytes()
+        catalog = json.loads(original.decode("utf-8-sig"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError("无法读取 MYGO 的模型目录，请先同步所选模型。") from error
+    models = models_by_slug(catalog)
+    if not models:
+        raise RuntimeError("MYGO 模型目录为空，请先同步所选模型。")
+    providers = provider_state()
+    preferences = load_roles(preferences_path)
+    resolved = resolve_role_models(preferences, gemini_aliases(models, providers))
+    visible = update_picker_visibility(home, catalog, resolved, providers, settings.get("model"))
+    encoded = json.dumps(catalog, ensure_ascii=False, indent=2) + "\n"
+    changed = encoded.encode("utf-8") != original
+    if changed or resolved != preferences:
+        backup = ConfigurationBackup(home, paths=[path, preferences_path])
+        if path.read_bytes() != original or load_roles(preferences_path) != preferences:
+            raise RuntimeError("模型配置刚刚发生变化，请再同步一次。")
+        try:
+            if changed:
+                atomic_write(path, encoded)
+            if resolved != preferences:
+                save_roles(preferences_path, resolved)
+        except Exception:
+            backup.restore()
+            raise
+    return {"visible": visible, "restart_required": changed}
+
+
+def configure(home, magpie, apply=False, repair=False):
+    preferences_path = home / "mygo/preferences.json"
+    preferences = load_roles(preferences_path)
     if not apply:
         return {"ready": True, "apply": False, "roles": preferences}
     magpie.require_supported_version()
+    try:
+        settings = tomllib.loads(read_config(home))
+    except tomllib.TOMLDecodeError as error:
+        raise RuntimeError("Codex config.toml must be valid before MYGO can update it.") from error
+    model = settings.get("model", "gpt-6.2-sol")
+    if not isinstance(model, str) or not MODEL_PATTERN.fullmatch(model):
+        raise RuntimeError("Codex's current lead model ID is invalid.")
     backup = ConfigurationBackup(home)
     providers_path = magpie_home() / "providers.json"
     providers_before = providers_path.read_bytes() if providers_path.exists() else None
     providers = provider_state()
+
+    def role_models(catalog):
+        resolved = resolve_role_models(preferences, gemini_aliases(models_by_slug(catalog), providers))
+        return resolved, {role["model"] for role in resolved["roles"].values()
+                          if connected_provider(role["model"], providers)}
+
     try:
-        magpie.select_models(preferences)
-        model = magpie.connect_codex(home)
-        source_catalog = home / "magpie-models.json"
-        catalog = json.loads(source_catalog.read_text(encoding="utf-8"))
-        models = catalog.get("models")
-        if not isinstance(models, list) or not models:
-            raise RuntimeError("Magpie's model catalog is empty or invalid.")
-        by_slug = {item.get("slug"): item for item in models if isinstance(item, dict)}
+        existing = uses_native_catalog(home, settings) and not repair
+        if not existing:
+            magpie.select_models(preferences)
+            model = magpie.connect_codex(home)
+            settings = tomllib.loads(read_config(home))
+        catalog = magpie_codex_catalog(home, magpie, settings)
+        resolved, required = role_models(catalog)
+        by_slug = models_by_slug(catalog)
+        if existing and any(by_slug.get(slug, {}).get("multi_agent_version") != "v2" for slug in required):
+            magpie.select_models(preferences)
+            providers = provider_state()
+            catalog = magpie_codex_catalog(home, magpie, settings)
+            resolved, required = role_models(catalog)
+            by_slug = models_by_slug(catalog)
+
         lead = by_slug.get(model)
         if not lead or lead.get("multi_agent_version") != "v2":
-            raise RuntimeError(f"The lead model {model} has no V2 entry. Select a V2-compatible lead in Codex and retry.")
+            raise RuntimeError(f"主模型 {model} 没有原生 V2 目录条目。请在 Codex 中选择支持 V2 的主模型后重试。")
         lead["multi_agent_tools_in_code_mode"] = True
-        required = {
-            role["model"] for role in preferences["roles"].values()
-            if connected_provider(role["model"], providers)
-        }
-        missing = sorted(required - set(by_slug))
+        missing = sorted(slug for slug in required if by_slug.get(slug, {}).get("multi_agent_version") != "v2")
         if missing:
-            raise RuntimeError("These role models are not in Magpie's catalog: " + ", ".join(missing))
-        for slug in sorted(required):
-            if by_slug[slug].get("multi_agent_version") != "v2":
-                raise RuntimeError(f"The role model {slug} has no V2 catalog entry.")
-        destination = home / "mygo-magpie-v2-models.json"
+            raise RuntimeError("以下型号尚未出现在 Magpie 的原生 V2 目录中。请刷新对应供应商的型号，或选择已支持的型号后重试。"
+                               "\n" + ", ".join(missing))
+        visible = update_picker_visibility(home, catalog, resolved, providers, model)
+        destination = home / NATIVE_CATALOG
         catalog_text = json.dumps(catalog, ensure_ascii=False, indent=2) + "\n"
         updated = read_config(home)
         for section, key, value in [
@@ -643,37 +828,34 @@ def configure(home, magpie, apply=False):
         atomic_write(destination, catalog_text)
         atomic_write(home / "config.toml", updated)
         capability = codex_capability_check(home)
+        if resolved != preferences:
+            save_roles(preferences_path, resolved)
     except Exception:
         backup.restore()
         if providers_before is None:
             if providers_path.exists():
                 providers_path.unlink()
-        else:
+        elif not providers_path.exists() or providers_path.read_bytes() != providers_before:
             temporary = providers_path.with_suffix(".mygo-restore")
             temporary.write_bytes(providers_before)
             os.replace(temporary, providers_path)
         raise
     return {
-        "lead_model": model, "catalog": str(destination), "restart_required": True,
+        "lead_model": model, "catalog": str(destination), "restart_required": True, "visible": visible,
         "apply": True, "backup": str(backup.directory), "capability_check": capability,
     }
 
 
 def status(home, magpie=None):
     config = read_config(home)
-    catalog = home / "mygo-magpie-v2-models.json"
+    catalog = home / NATIVE_CATALOG
     models = catalog_models(catalog)
     providers = provider_state()
-    roles = load_roles(home / "mygo" / "preferences.json")
+    roles = resolve_role_models(load_roles(home / "mygo/preferences.json"), gemini_aliases(models, providers))
     try:
         settings = tomllib.loads(config)
     except tomllib.TOMLDecodeError:
         settings = {}
-    configured_path = settings.get("model_catalog_json")
-    features = settings.get("features")
-    v2 = features.get("multi_agent_v2") if isinstance(features, dict) else None
-    uses_catalog = isinstance(configured_path, str) and (home / configured_path) == catalog
-    v2_enabled = v2 is True or (isinstance(v2, dict) and v2.get("enabled") is True)
     executable = magpie.executable if magpie else find_magpie()
     version = None
     if executable:
@@ -686,7 +868,7 @@ def status(home, magpie=None):
         "magpie_installed": bool(executable),
         "magpie_version": version,
         "magpie_compatible": bool(version and tuple(map(int, version.split("."))) >= MINIMUM_MAGPIE),
-        "v2_configured": uses_catalog and v2_enabled,
+        "v2_configured": uses_native_catalog(home, settings),
         "code_mode": bool(re.search(r"(?m)^code_mode\s*=\s*true\s*$", config)),
         "model_catalog": catalog.exists(),
         "roles": roles,
@@ -694,6 +876,7 @@ def status(home, magpie=None):
         "available_models": list(models),
         "missing_models": sorted({
             role["model"] for role in roles["roles"].values()
-            if connected_provider(role["model"], providers) and role["model"] not in models
+            if connected_provider(role["model"], providers)
+            and models.get(role["model"], {}).get("multi_agent_version") != "v2"
         }),
     }

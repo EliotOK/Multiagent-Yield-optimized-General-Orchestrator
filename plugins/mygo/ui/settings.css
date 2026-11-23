@@ -67,7 +67,8 @@ main { display: grid; gap: 16px; }
 }
 .panel-note { margin-top: 12px; }
 .native-overview { justify-content: flex-start; }
-.native-overview :is(button, a) { margin-left: auto; }
+.native-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.native-actions:has(button[hidden] + button[hidden]) { display: none; }
 #native-symbol {
   display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%;
   background: var(--alert-soft); color: var(--alert); font-size: 24px; font-weight: 650;
@@ -146,7 +147,7 @@ button.primary:disabled { background: var(--field); color: var(--muted); border-
   .role { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 0; }
   .role-settings { margin-left: 0; }
   .role-purpose { margin-top: 2px; }
-  .native-overview button { margin-left: 0; }
+  .native-actions { margin-left: 0; }
   .section-heading, .native-overview { gap: 8px 12px; }
   .section-heading:has(#save-roles) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
 }

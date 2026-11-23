@@ -536,6 +536,112 @@ class ConfigurationTests(IsolatedCase):
         lead = next(item for item in catalog["models"] if item["slug"] == "gpt-6.2-sol")
         self.assertTrue(lead["multi_agent_tools_in_code_mode"])
 
+    def test_picker_keeps_native_and_synced_choices_and_can_restore_visibility(self):
+        self.write_providers([
+            {"id": "google", "preset": "google", "key": "test-only",
+             "pickedFrom": ["gemini-4-hydrogen", "models/gemini-4-hydrogen", "gemini-future", "gemini-old"]},
+        ])
+        (self.home / "config.toml").write_text(
+            'model = "gpt-6.2-sol"\nmodel_catalog_json = "mygo-magpie-v2-models.json"\n'
+            '[features.multi_agent_v2]\nenabled = true\n', encoding="utf-8",
+        )
+        preferences = copy.deepcopy(mygo_setup.DEFAULT_ROLES)
+        preferences["roles"]["writer"]["model"] = "google/gemini-4-hydrogen"
+        preferences_path = self.home / "mygo/preferences.json"
+        mygo_setup.save_roles(preferences_path, preferences)
+        catalog = self.home / mygo_setup.NATIVE_CATALOG
+        catalog.write_text(json.dumps({"models": [
+            {"slug": "gpt-6.2-sol", "visibility": "list", "multi_agent_version": "v2"},
+            {"slug": "gpt-native-v1", "visibility": "list"},
+            {"slug": "gpt-hidden", "visibility": "hide"},
+            {"slug": "google/models/gemini-4-hydrogen", "visibility": "list", "multi_agent_version": "v2"},
+            {"slug": "google/gemini-old", "visibility": "list"},
+            {"slug": "qwen/qwen3", "visibility": "list", "multi_agent_version": "v2"},
+            {"slug": "qwen/internal", "visibility": "hide", "multi_agent_version": "v2"},
+        ]}), encoding="utf-8")
+
+        instance = mygo_server.Server(self.home)
+        status = instance.call("read_settings", {})
+        writer = status["model_choices"]["writer"]
+        self.assertIn("google/models/gemini-4-hydrogen", writer["options"])
+        self.assertNotIn("google/gemini-4-hydrogen", writer["options"])
+        self.assertEqual(writer["needs_sync"], ["google/gemini-future", "google/gemini-old"])
+
+        result = instance.call("sync_model_picker", {})
+        self.assertEqual(result, {"restart_required": True, "visible": 3})
+        self.assertEqual(mygo_setup.load_roles(preferences_path)["roles"]["writer"]["model"],
+                         "google/models/gemini-4-hydrogen")
+        models = mygo_setup.catalog_models(catalog)
+        self.assertEqual(len(models), 7)
+        self.assertEqual(models["qwen/qwen3"]["visibility"], "hide")
+        self.assertEqual(models["google/gemini-old"]["visibility"], "hide")
+        self.assertEqual(instance.call("sync_model_picker", {}), {"restart_required": False, "visible": 3})
+
+        self.write_providers([
+            {"id": "google", "preset": "google", "key": "test-only", "models": ["gemini-4-hydrogen"]},
+            {"id": "qwen", "preset": "qwen", "key": "test-only", "models": ["qwen3", "internal"]},
+        ])
+        self.assertEqual(instance.call("sync_model_picker", {}), {"restart_required": True, "visible": 4})
+        models = mygo_setup.catalog_models(catalog)
+        self.assertEqual(models["qwen/qwen3"]["visibility"], "list")
+        self.assertEqual(models["qwen/internal"]["visibility"], "hide")
+
+    def test_signed_in_sync_loads_gateway_catalog_without_legacy_files(self):
+        self.write_providers()
+        (self.home / "config.toml").write_text(
+            'model = "gpt-6.2-sol"\nmodel_catalog_json = "mygo-magpie-v2-models.json"\n'
+            'openai_base_url = "http://127.0.0.1:3425/backend-api/codex"\n'
+            '[features.multi_agent_v2]\nenabled = true\n', encoding="utf-8",
+        )
+        catalog = self.catalog()
+        lead = catalog["models"].pop(0)
+        (self.home / "models_cache.json").write_text(json.dumps({"models": [lead]}), encoding="utf-8")
+        fake = FakeMagpie()
+        with mock.patch.object(mygo_setup, "HTTPConnection") as connection, \
+                mock.patch.object(mygo_setup, "codex_capability_check", return_value="passed"):
+            conn = connection.return_value
+            conn.getresponse.return_value.status = 200
+            conn.getresponse.return_value.read.return_value = json.dumps(catalog).encode("utf-8")
+            result = mygo_setup.configure(self.home, fake, apply=True)
+        self.assertEqual(fake.calls, [])
+        conn.request.assert_called_once_with("GET", "/v1/codex/models?client_version=0.166.0")
+        self.assertEqual(result["visible"], 5)
+        self.assertEqual(set(mygo_setup.catalog_models(Path(result["catalog"]))),
+                         {lead["slug"], *(entry["slug"] for entry in catalog["models"])})
+        self.assertFalse(any((self.home / name).exists() for name in mygo_setup.MAGPIE_CATALOGS))
+
+    def test_existing_configuration_syncs_a_newly_selected_model(self):
+        self.write_providers([{"id": "deepseek", "preset": "deepseek", "key": "test-only",
+                               "pickedFrom": ["deepseek-flash", "deepseek-v4-pro"]}])
+        (self.home / "config.toml").write_text(
+            'model_catalog_json = "mygo-magpie-v2-models.json"\n[features.multi_agent_v2]\nenabled = true\n',
+            encoding="utf-8",
+        )
+        preferences = copy.deepcopy(mygo_setup.DEFAULT_ROLES)
+        preferences["roles"]["researcher"]["model"] = "deepseek/deepseek-v4-pro"
+        mygo_setup.save_roles(self.home / "mygo/preferences.json", preferences)
+        initial = self.catalog()
+        synced = copy.deepcopy(initial)
+        synced["models"].append({"slug": "deepseek/deepseek-v4-pro", "multi_agent_version": "v2"})
+        fake = FakeMagpie()
+        with mock.patch.object(fake, "codex_catalog", side_effect=[initial, synced]), \
+                mock.patch.object(mygo_setup, "codex_capability_check", return_value="passed"):
+            result = mygo_setup.configure(self.home, fake, apply=True)
+        self.assertEqual(fake.calls, [["provider", "models", "deepseek", "+deepseek-v4-pro"], ["sync"]])
+        models = mygo_setup.catalog_models(Path(result["catalog"]))
+        self.assertEqual(models["deepseek/deepseek-v4-pro"].get("visibility", "list"), "list")
+
+    def test_desktop_catalog_is_valid_fallback_when_gateway_is_unavailable(self):
+        desktop = self.home / "magpie-desktop-models.json"
+        desktop.write_text(json.dumps(self.catalog()), encoding="utf-8")
+        legacy = self.home / "magpie-models.json"
+        legacy.write_text('{"models":[]}', encoding="utf-8")
+        result = mygo_setup.magpie_codex_catalog(self.home, FakeMagpie(), {})
+        self.assertEqual(result, self.catalog())
+        desktop.unlink()
+        with self.assertRaisesRegex(RuntimeError, "无法读取 Magpie"):
+            mygo_setup.magpie_codex_catalog(self.home, FakeMagpie(), {})
+
     def test_failed_configuration_restores_codex_and_magpie_files(self):
         providers = self.write_providers()
         original_providers = providers.read_bytes()

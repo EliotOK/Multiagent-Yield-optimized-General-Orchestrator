@@ -81,9 +81,12 @@ let browser;
         result = { structuredContent: { saved: true, preferences: window.mockState.roles } };
       }
       if (m.method === 'tools/call' && m.params.name === 'import_credential') result = { structuredContent: { window_opened: true, message: '模拟密码窗口已打开' } };
+      if (m.params?.name === 'sync_model_picker') {
+        result = { structuredContent: { visible: 39, restart_required: true } };
+      }
       if (m.method === 'tools/call' && m.params.name === 'configure_native') {
         window.mockState.model_choices.researcher.needs_sync = [];
-        result = { structuredContent: { backup: 'isolated-test/backup', restart_required: true } };
+        result = { structuredContent: { backup: 'isolated-test/backup', visible: 39, restart_required: true } };
       }
       event.source.postMessage({ jsonrpc: '2.0', id: m.id, result }, '*');
     });
@@ -223,9 +226,11 @@ let browser;
   await frame.locator('#save-roles').click();
   await frame.locator('#notice').filter({ hasText: '分工预设已保存' }).waitFor();
   await frame.locator('#configure').click();
-  await frame.locator('#notice').filter({ hasText: '配置完成' }).waitFor();
+  await frame.locator('#notice').filter({ hasText: '已同步模型' }).waitFor();
   await frame.locator('#v2-status').filter({ hasText: '配置已更新，请重启 Codex' }).waitFor();
   assert.equal(await modelSelect.inputValue(), selectedModel);
+  await frame.getByRole('button', { name: '同步 Codex 模型菜单' }).click();
+  await frame.locator('#notice').filter({ hasText: 'Codex 模型菜单包含 39 个型号' }).waitFor();
   const calls = await page.evaluate(() => window.calls);
   const refreshes = calls.filter(call => call.params?.name === 'refresh_provider_models');
   assert.deepEqual(refreshes.map(call => call.params.arguments), [{provider_id: 'zhipu'}]);
