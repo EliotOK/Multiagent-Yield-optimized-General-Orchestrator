@@ -173,6 +173,38 @@ def magpie_environment():
     return {}
 
 
+def magpie_gateway_address():
+    address = os.environ.get("MAGPIE_ADDR")
+    if address:
+        try:
+            override = urlsplit("//" + address)
+            if override.port:
+                return "::1" if override.hostname in {"::", "::1"} else "127.0.0.1", override.port
+        except ValueError:
+            pass
+    try:
+        settings = json.loads((magpie_home() / "settings.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        settings = {}
+    port = settings.get("port") if isinstance(settings, dict) else None
+    return "127.0.0.1", port if type(port) is int and 0 < port < 65536 else 3425
+
+
+def magpie_gateway_ready(host, port):
+    connection = HTTPConnection(host, port, timeout=1)
+    try:
+        connection.request("GET", "/api/hello")
+        response = connection.getresponse()
+        if response.status == 200:
+            identity = json.loads(response.read(4096))
+            return isinstance(identity, dict) and identity.get("name") == "magpie"
+    except (OSError, ValueError, HTTPException):
+        pass
+    finally:
+        connection.close()
+    return False
+
+
 def managed_magpie_path():
     override = os.environ.get("MYGO_MAGPIE_EXECUTABLE")
     if override:
@@ -550,13 +582,29 @@ class Magpie:
         self.run(["sync"], timeout=120)
 
     def ensure_gateway(self):
-        self.run(["autostart", "on"])
-        if os.name == "nt":
-            flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-            subprocess.Popen([self.executable], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True,
-                             env=os.environ.copy() | magpie_environment())
-            time.sleep(1)
+        if os.name != "nt":
+            self.run(["autostart", "on"])
+            return
+        host, port = magpie_gateway_address()
+        if magpie_gateway_ready(host, port):
+            return
+
+        # A detached CLI needs the server command because its default opens a TUI.
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        process = subprocess.Popen([self.executable, "serve"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True,
+                                   env=os.environ.copy() | magpie_environment())
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            if magpie_gateway_ready(host, port):
+                return
+            if process.poll() is not None:
+                break
+            time.sleep(0.25)
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
+        raise RuntimeError(f"Magpie 网关在本机端口 {port} 没有应答。请打开 Magpie，或在终端运行 magpie serve 后重试。")
 
     def connect_codex(self, home):
         config = read_config(home)

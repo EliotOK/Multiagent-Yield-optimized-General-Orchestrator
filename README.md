@@ -28,6 +28,8 @@ codex plugin add mygo@mygo
 
 </details>
 
+如果启用后 Codex 报 `127.0.0.1:3425` 连不上，先打开 Magpie 桌面版。只有 MYGO 安装的 CLI 时，可以在 PowerShell 运行 `& "$env:LOCALAPPDATA\MYGO\bin\magpie.exe" serve`。保留窗口，再试一次 Codex。[Magpie 网关排查](https://usemagpie.ai/docs/zh/agent-drift)
+
 ## 平时怎么用
 
 在请求前加上 `$mygo`，直接说你想做什么。可以让 Codex 自己分工，也可以点名：

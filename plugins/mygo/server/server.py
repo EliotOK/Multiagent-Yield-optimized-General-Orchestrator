@@ -17,7 +17,8 @@ from mygo_setup import (
     install_magpie, managed_magpie_path, load_roles, role_model_choices, save_roles, status, sync_model_picker,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_FOLDER = Path(__file__).absolute().parents[1]
+ROOT = PLUGIN_FOLDER.resolve()
 VERSION = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
 CACHE_PATH = Path("plugins/cache/mygo/mygo")
 PLUGIN_ID = "mygo@mygo"
@@ -129,10 +130,20 @@ def published_version():
 
 
 def profile_home(root):
-    # Installed plugin paths identify the profile that owns the MCP process.
+    configured = os.environ.get("CODEX_HOME")
+    explicit_home = Path(configured).expanduser() if configured else None
+    default_home = Path.home() / ".codex"
+    # Match the physical package through each profile's logical cache path.
+    # Windows may place that cache on a different drive through a junction.
+    physical_package = root.resolve()
+    for candidate in (explicit_home, default_home):
+        if candidate is not None and (candidate / CACHE_PATH / root.name).resolve() == physical_package:
+            return candidate
     if root.parent.parts[-len(CACHE_PATH.parts):] == CACHE_PATH.parts:
-        return root.parents[len(CACHE_PATH.parts)]
-    return Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+        cached_home = root.parents[len(CACHE_PATH.parts)]
+        if (cached_home / "config.toml").is_file():
+            return cached_home
+    return explicit_home if explicit_home is not None else default_home
 
 
 def version_key(version):
@@ -439,7 +450,7 @@ class Server:
 
 
 def main():
-    server = Server(profile_home(ROOT))
+    server = Server(profile_home(PLUGIN_FOLDER))
     sys.stdout.reconfigure(encoding="utf-8")
     for line in sys.stdin.buffer:
         try:

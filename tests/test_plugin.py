@@ -99,8 +99,16 @@ class UpdateTests(IsolatedCase):
         root = self.home / mygo_server.CACHE_PATH / "0.9.0"
         other_profile = self.base / "other-profile"
         with mock.patch.dict(os.environ, {"CODEX_HOME": str(other_profile)}):
+            (self.home / "config.toml").touch()
             self.assertEqual(mygo_server.profile_home(root), self.home)
             self.assertEqual(mygo_server.profile_home(PLUGIN), other_profile)
+
+    def test_relocated_cache_uses_configured_profile(self):
+        cache_disk = self.base / "relocated"
+        package = cache_disk / mygo_server.CACHE_PATH / "0.3.11"
+        package.mkdir(parents=True)
+        (self.home / "config.toml").write_text('model = "gpt-6.2-sol"\n', encoding="utf-8")
+        self.assertEqual(mygo_server.profile_home(package), self.home)
 
     def inventory(self, version):
         return subprocess.CompletedProcess([], 0, json.dumps({"installed": [
@@ -461,6 +469,46 @@ class CredentialTests(IsolatedCase):
         self.assertEqual(captured["secret"], marker)
         self.assertNotIn(marker, output.getvalue())
         self.assertNotIn(marker, " ".join(sys.argv))
+
+
+class GatewayStartupTests(IsolatedCase):
+    def test_gateway_probe_checks_identity_on_configured_port(self):
+        (self.magpie / "settings.json").write_text('{"port": 13425}', encoding="utf-8")
+        with mock.patch.dict(os.environ, {"MAGPIE_ADDR": ""}):
+            self.assertEqual(mygo_setup.magpie_gateway_address(), ("127.0.0.1", 13425))
+        with mock.patch.object(mygo_setup, "HTTPConnection") as dial:
+            connection = dial.return_value
+            response = connection.getresponse.return_value
+            response.status = 200
+            response.read.side_effect = [b'{"name":"other-service"}', b'{"name":"magpie"}']
+            self.assertFalse(mygo_setup.magpie_gateway_ready("127.0.0.1", 13425))
+            self.assertTrue(mygo_setup.magpie_gateway_ready("127.0.0.1", 13425))
+            connection.request.assert_called_with("GET", "/api/hello")
+
+    def test_detached_windows_cli_starts_serve_and_waits_for_gateway(self):
+        magpie = FakeMagpie()
+        with mock.patch.object(mygo_setup.os, "name", "nt"), \
+                mock.patch.object(mygo_setup, "magpie_gateway_address", return_value=("127.0.0.1", 3425)), \
+                mock.patch.object(mygo_setup, "magpie_gateway_ready", side_effect=[False, False, True]) as ready, \
+                mock.patch.object(mygo_setup.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, create=True), \
+                mock.patch.object(mygo_setup.subprocess, "DETACHED_PROCESS", 8, create=True), \
+                mock.patch.object(mygo_setup.subprocess, "Popen") as start, \
+                mock.patch.object(mygo_setup.time, "sleep"):
+            start.return_value.poll.return_value = None
+            magpie.ensure_gateway()
+        self.assertEqual(start.call_args.args[0], ["fake-magpie", "serve"])
+        self.assertEqual(ready.call_count, 3)
+        self.assertEqual(magpie.calls, [])
+
+    def test_dead_gateway_leaves_native_configuration_untouched(self):
+        instance = mygo_server.Server(self.home)
+        instance.magpie = FakeMagpie()
+        with mock.patch.object(instance, "ensure_magpie"), \
+                mock.patch.object(instance.magpie, "ensure_gateway", side_effect=RuntimeError("gateway unavailable")), \
+                mock.patch.object(mygo_server, "configure") as configure:
+            with self.assertRaisesRegex(RuntimeError, "gateway unavailable"):
+                instance.call("configure_native", {})
+        configure.assert_not_called()
 
 
 class ConfigurationTests(IsolatedCase):

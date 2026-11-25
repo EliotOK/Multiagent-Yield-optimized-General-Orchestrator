@@ -26,6 +26,8 @@ Reopen Codex and send `$mygo open MYGO settings`. Follow the panel prompts to co
 
 </details>
 
+If Codex cannot connect to `127.0.0.1:3425` after setup, open Magpie Desktop. With only the CLI installed by MYGO, run `& "$env:LOCALAPPDATA\MYGO\bin\magpie.exe" serve` in PowerShell. Keep it running and retry Codex. [Magpie gateway troubleshooting](https://usemagpie.ai/docs/agent-drift)
+
 ## Use it in a chat
 
 Start a request with `$mygo`. Let Codex choose the team, or name the models you want:
