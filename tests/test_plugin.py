@@ -69,6 +69,9 @@ class IsolatedCase(unittest.TestCase):
         }, clear=False)
         self.environment.start()
         self.addCleanup(self.environment.stop)
+        threads = mock.patch.object(mygo_server, "Thread")
+        self.threads = threads.start()
+        self.addCleanup(threads.stop)
         for name in [item["env"] for item in mygo_setup.PROVIDERS.values()]:
             os.environ.pop(name, None)
 
@@ -86,6 +89,40 @@ class IsolatedCase(unittest.TestCase):
 
 
 class UpdateTests(IsolatedCase):
+    def test_startup_workers_are_independent_and_gateway_retries(self):
+        with mock.patch.object(mygo_server, "Magpie") as magpie:
+            magpie.return_value.executable = None
+            server = mygo_server.Server(self.home)
+            self.threads.assert_called_once_with(target=server._check_update_at_start, daemon=True)
+            self.threads.return_value.start.assert_called_once()
+            self.threads.reset_mock()
+            magpie.return_value.executable = "magpie"
+            server = mygo_server.Server(self.home)
+            if os.name == "nt":
+                self.threads.assert_any_call(target=server._ensure_gateway_at_start, daemon=True)
+                self.assertEqual(self.threads.return_value.start.call_count, 2)
+            server.magpie.ensure_gateway.assert_not_called()
+            server.magpie.ensure_gateway.side_effect = [RuntimeError("busy"), None]
+            with mock.patch.object(mygo_server.time, "sleep") as sleep:
+                server._ensure_gateway_at_start()
+            sleep.assert_called_once_with(2)
+            self.assertEqual(server.magpie.ensure_gateway.call_count, 2)
+
+    def test_startup_update_throttles_checks_and_remembers_each_notification(self):
+        server = mygo_server.Server(self.home)
+        other = mygo_server.Server(self.home)
+        with mock.patch.object(mygo_server, "VERSION", "1.0.0"), \
+                mock.patch.object(mygo_server, "published_version", side_effect=[
+                    RuntimeError("offline"), "1.0.0", "1.0.1", "1.0.2", "1.0.2", "1.0.3"]) as fetch, \
+                mock.patch.object(mygo_server, "find_codex", return_value=None), \
+                mock.patch.object(mygo_server, "installed_version", side_effect=["1.0.1", "1.0.1", "1.0.1", "1.0.1"]), \
+                mock.patch.object(mygo_server, "notify_update") as notify, \
+                mock.patch.object(mygo_server.time, "time", side_effect=[0, 2, 900, 87300, 173700, 173701, 260100, 346500]):
+            for instance in [server, other] * 4:
+                instance._check_update_at_start()
+            self.assertEqual(fetch.call_count, 6)
+            self.assertEqual(notify.call_args_list, [mock.call("1.0.2"), mock.call("1.0.3")])
+
     def test_reads_the_published_version(self):
         manifest = json.dumps({"name": "mygo", "version": "0.10.0"}).encode()
         response = io.BytesIO(json.dumps({

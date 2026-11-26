@@ -22,9 +22,11 @@ codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestr
 codex plugin add mygo@mygo
 ```
 
-Reopen Codex and send `$mygo open MYGO settings`. Follow the panel prompts to connect your providers and enable native subagents. For future updates, click **检查更新** in the settings panel. The header shows the running version. Restart Codex when the panel reports that a newer version has been installed. You can also run `codex plugin marketplace upgrade mygo`.
+Reopen Codex and send `$mygo open MYGO settings`. Follow the panel prompts to connect your providers and enable native subagents. On Windows, MYGO checks the local Magpie gateway at plugin startup and starts it if needed.
 
 </details>
+
+**Updating MYGO**　On 0.3.12, open MYGO settings, click **检查更新** (Check for updates), then **更新 MYGO** (Update MYGO). Restart Codex after installation. Starting with 0.3.13, the plugin checks GitHub in the background at startup, with at most one successful check per day per Codex profile. A desktop notification announces each newer version once. You can also check manually or run `codex plugin marketplace upgrade mygo`.
 
 If Codex cannot connect to `127.0.0.1:3425` after setup, open Magpie Desktop. With only the CLI installed by MYGO, run `& "$env:LOCALAPPDATA\MYGO\bin\magpie.exe" serve` in PowerShell. Keep it running and retry Codex. [Magpie gateway troubleshooting](https://usemagpie.ai/docs/agent-drift)
 

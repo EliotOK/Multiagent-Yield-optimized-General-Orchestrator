@@ -24,9 +24,11 @@ codex plugin marketplace add EliotOK/Multiagent-Yield-optimized-General-Orchestr
 codex plugin add mygo@mygo
 ```
 
-安装后重新打开 Codex，发送 `$mygo 打开 MYGO 设置`。按面板提示接入供应商、启用原生子代理。以后在设置页点「检查更新」。页首显示当前运行的版本，提示新版已安装后可重新启动 Codex 加载。也可以运行 `codex plugin marketplace upgrade mygo`。
+安装后重新打开 Codex，发送 `$mygo 打开 MYGO 设置`，按面板提示接入供应商、启用原生子代理。Windows 上，插件启动时会检查本机 Magpie 网关，需要时自动启动。
 
 </details>
+
+**更新插件**　使用 0.3.12 的用户可在 MYGO 设置里点「检查更新」→「更新 MYGO」，装好后重启 Codex。从 0.3.13 起，插件启动时会在后台检查 GitHub，每个 Codex 配置每天最多成功检查一次。发现新版会弹出桌面提醒，同一版本只提示一次。也可以随时手动检查，或运行 `codex plugin marketplace upgrade mygo`。
 
 如果启用后 Codex 报 `127.0.0.1:3425` 连不上，先打开 Magpie 桌面版。只有 MYGO 安装的 CLI 时，可以在 PowerShell 运行 `& "$env:LOCALAPPDATA\MYGO\bin\magpie.exe" serve`。保留窗口，再试一次 Codex。[Magpie 网关排查](https://usemagpie.ai/docs/zh/agent-drift)
 

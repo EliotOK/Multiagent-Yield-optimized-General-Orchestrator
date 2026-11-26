@@ -1,14 +1,17 @@
 """MYGO settings MCP App. The tool schema never accepts an API key."""
 
 from base64 import b64decode
+from contextlib import closing
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
-import threading
+from threading import Lock, Thread
+import time
 from urllib.request import Request, urlopen
 
 from mygo_setup import (
@@ -208,12 +211,75 @@ def update_error(result):
         return "当前 Codex 配置无法升级 MYGO 市场源。请核对插件目录中的 MYGO 来源。"
     return f"Codex 的插件更新命令失败（退出码 {result.returncode}）。请在插件目录中刷新 MYGO 市场源后重试。"
 
+
+def notify_update(version):
+    message = f"MYGO {version} 已发布。打开 Codex 的 MYGO 设置，点击「检查更新」，再选择「更新 MYGO」。"
+    if os.name == "nt":
+        import ctypes
+        if not ctypes.windll.user32.MessageBoxW(None, message, "MYGO 更新", 0x40):
+            raise OSError("Could not display update notification")
+        return
+    if sys.platform == "darwin":
+        command = ["osascript", "-e", f'display notification "{message}" with title "MYGO 更新"']
+    else:
+        command = ["notify-send", "--app-name=MYGO", "MYGO 更新", message]
+    subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, check=True, timeout=5)
+
+
 class Server:
     def __init__(self, home):
         self.home = home.expanduser().resolve()
         self.magpie = Magpie()
-        self.setup_lock = threading.Lock()
+        self.setup_lock = Lock()
         self.credential_process = None
+        if os.name == "nt" and self.magpie.executable:
+            Thread(target=self._ensure_gateway_at_start, daemon=True).start()
+        Thread(target=self._check_update_at_start, daemon=True).start()
+
+    def _ensure_gateway_at_start(self):
+        for attempt in range(2):
+            try:
+                self.magpie.ensure_gateway()
+                return
+            except Exception:
+                if attempt == 0:
+                    time.sleep(2)
+
+    def _check_update_at_start(self):
+        try:
+            folder = self.home / "mygo"
+            folder.mkdir(parents=True, exist_ok=True)
+            cache = folder / "update-check.sqlite3"
+            with closing(sqlite3.connect(cache)) as db:
+                now = int(time.time())
+                with db:
+                    db.execute("CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY, due INTEGER, notified TEXT)")
+                    db.execute("INSERT OR IGNORE INTO updates VALUES (1, 0, '')")
+                    # Claim this check across MCP processes. A failed check can retry after 15 minutes.
+                    claimed = db.execute("UPDATE updates SET due=? WHERE id=1 AND due<=?", (now + 900, now))
+                    if not claimed.rowcount:
+                        return
+                latest = published_version()
+                available = version_key(latest) > version_key(VERSION)
+                if available:
+                    installed = installed_version(find_codex(), update_environment(self.home))
+                    available = version_key(latest) > version_key(installed)
+                with db:
+                    db.execute("UPDATE updates SET due=? WHERE id=1", (now + 86400,))
+                    if not available:
+                        return
+                    changed = db.execute("UPDATE updates SET notified=? WHERE id=1 AND notified<>?", (latest, latest))
+                    if not changed.rowcount:
+                        return
+            try:
+                notify_update(latest)
+            except (OSError, subprocess.SubprocessError):
+                with closing(sqlite3.connect(cache)) as db, db:
+                    db.execute("UPDATE updates SET notified='' WHERE id=1 AND notified=?", (latest,))
+        except (OSError, sqlite3.Error, RuntimeError):
+            # The settings panel still offers an explicit check with error reporting.
+            return
 
     def read(self):
         result = status(self.home, self.magpie)
